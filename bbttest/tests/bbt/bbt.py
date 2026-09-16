@@ -74,6 +74,8 @@ class BBTTest(BaseBayesianTest):
             - `spread` - Adds `ceil(ties / 2)` wins to both players.
             - `forget` - Ignores the ties.
             - `davidson` - Uses Davidson's method to handle ties in the BBT model. See [1]_.
+        Note: we found inconsistencies in mathematical foundations of the `spread` method, which we still investigate.
+            For the time being, we recommend using alternative methods such as `add`.
 
         Note: [1]_ uses `spread`, and reports `add`, `forget` and `spread` to fit equally
         well (sec. 6.2). We default to `add` because `spread` is not exactly
