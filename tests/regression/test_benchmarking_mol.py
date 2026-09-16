@@ -24,8 +24,8 @@ The tests validate that the BBTTest model correctly identifies:
 - Worse performing models
 
 Test parameters:
-- local_rope_value: 0.01
-- tie_solver: "spread"
+- absolute_tie_threshold: 0.01 (one score per dataset)
+- tie_solver: "add"
 - MCMC sampling: 2000 draws, 1000 tune, 4 chains
 """
 
@@ -55,7 +55,7 @@ def benchmarking_data():
 @pytest.fixture(scope="module")
 def fitted_model(benchmarking_data):
     """
-    Fit BBTTest model with local_rope_value=0.01.
+    Fit BBTTest model with absolute_tie_threshold=0.01.
 
     Parameters
     ----------
@@ -67,7 +67,7 @@ def fitted_model(benchmarking_data):
     BBTTest
         Fitted BBTTest model instance.
     """
-    model = BBTTest(local_rope_value=0.01, tie_solver="add")
+    model = BBTTest(absolute_tie_threshold=0.01, tie_solver="add")
     model.fit(
         benchmarking_data,
         dataset_col="dataset",

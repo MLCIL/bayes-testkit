@@ -1,7 +1,9 @@
-"""bbt-test: Bayesian Bradley-Terry model for algorithm comparison."""
+"""bbt-test: Bayesian model comparison tests for machine learning experiments."""
 
-from .tests import BBTTest
+from .tests import BBTTest, CorrelatedTTest, HierarchicalTTest
 
 __all__ = [
     "BBTTest",
+    "CorrelatedTTest",
+    "HierarchicalTTest",
 ]

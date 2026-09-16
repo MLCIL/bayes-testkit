@@ -76,13 +76,13 @@ def _build_bbt_model(
             pwin = pm.Deterministic("pwin", w_p1 / denominator)
             ptie = pm.Deterministic("ptie", aux / denominator)
 
-            # Likelihood
-            pm.Binomial("win1_obs", n=n, p=pwin, observed=w1)
+            # Likelihood. Both ``pwin`` and ``ptie`` are normalised over all
+            # three outcomes (Wainer 2023, Eq. 7), so both are marginals of the
+            # same Multinomial(nn, (pwin, plose, ptie)) and must use the *total*
+            # number of matches ``nn``. Using ``n = w1 + w2`` here would pair an
+            # unconditional probability with a total that excludes ties.
+            pm.Binomial("win1_obs", n=nn, p=pwin, observed=w1)
             pm.Binomial("ties_obs", n=nn, p=ptie, observed=ties_arr)
-
-            # Posterior predictive checks
-            pm.Binomial("win1_rep", n=n, p=pwin)
-            pm.Binomial("tie_rep", n=nn, p=ptie)
 
         else:
             denominator = w_p1 + w_p2
@@ -91,9 +91,12 @@ def _build_bbt_model(
             # Likelihood
             pm.Binomial("win1_obs", n=n, p=pwin, observed=w1)
 
-            # Posterior predictive checks
-            pm.Binomial("win1_rep", n=n, p=pwin)
-
+    # The posterior predictive check (Wainer 2023, sec. 5.4) replays the
+    # *observed* variables through ``pm.sample_posterior_predictive``. Declaring
+    # extra unobserved Binomial "replicate" variables here instead would leave
+    # discrete free variables in the model, which forces ``pm.sample`` into a
+    # NUTS + Metropolis compound step and drags those draws into every
+    # convergence summary the user sees.
     return model
 
 
@@ -103,7 +106,12 @@ def _mcmcbbt_pymc(
     hyper_prior: str,
     scale: float,
     **kwargs,
-) -> az.InferenceData:
+) -> tuple[az.InferenceData, pm.Model]:
+    """Build and sample the BBT model.
+
+    Returns both the draws and the model, because the model is needed again for
+    the posterior predictive check.
+    """
     player1 = table[:, 0].tolist()
     player2 = table[:, 1].tolist()
     win1 = table[:, 2].tolist()
@@ -122,14 +130,12 @@ def _mcmcbbt_pymc(
         use_davidson=use_davidson,
     )
 
+    # Keep the pointwise log-likelihood so that az.waic / az.loo work on the
+    # result -- Wainer (2023) sec. 6.2 compares the tie policies by WAIC.
+    idata_kwargs = {"log_likelihood": True, **kwargs.pop("idata_kwargs", {})}
+
     # Sample from the model
     with model:
-        # Filter kwargs to only those accepted by pm.sample
-        sample_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k in ["draws", "tune", "chains", "cores", "target_accept", "random_seed"]
-        }
-        fit = pm.sample(**sample_kwargs)
+        fit = pm.sample(idata_kwargs=idata_kwargs, **kwargs)
 
-    return fit
+    return fit, model

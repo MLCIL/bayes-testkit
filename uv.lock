@@ -152,6 +152,7 @@ dependencies = [
     { name = "networkx" },
     { name = "pandas" },
     { name = "pymc" },
+    { name = "scipy" },
     { name = "tqdm" },
 ]
 
@@ -178,6 +179,7 @@ requires-dist = [
     { name = "networkx" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pymc" },
+    { name = "scipy" },
     { name = "tqdm" },
 ]
 

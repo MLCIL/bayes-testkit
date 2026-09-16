@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
+from bbttest.tests.common import hdi_from_samples
+
 ALG1_COL = 2
 ALG2_COL = 3
 TIE_COL = 4
@@ -31,17 +33,32 @@ def _gen_pairs(no_algs: int) -> Generator[tuple[int, int, int], None, None]:
 def _construct_no_paired(
     data_mean: pd.DataFrame,
     alg_names: list[str],
-    lrope_value: float,
+    effect_size: float,
     data_sd: pd.DataFrame | None,
-    unpaired_rope_value: float | None,
+    absolute_threshold: float | None,
 ) -> np.ndarray:
+    """Build the win table from one measure per algorithm per data set.
+
+    Two tie rules are possible here, and they live on different scales:
+
+    - with ``data_sd``, the local ROPE of Wainer (2023), Eq. (4), an *effect
+      size* threshold ``effect_size * sqrt((s_i^2 + s_j^2) / 2)``;
+    - without it, an *absolute* threshold in the units of the metric. This is
+      not from the paper; it exists for fixed-split designs, where there is no
+      within-data-set spread to form an effect size from and a difference of
+      1e-4 would otherwise count as a win.
+    """
     logger.debug("Using unpaired BBT test.")
     if data_sd is not None:
-        logger.debug("Using paired ROPE values based on provided standard deviations.")
-    elif unpaired_rope_value is not None:
-        logger.debug("Using unpaired ROPE value.")
+        logger.debug(
+            "Tie rule: local ROPE effect size %s scaled by the pooled sd.", effect_size
+        )
+    elif absolute_threshold is not None:
+        logger.debug(
+            "Tie rule: absolute threshold %s in metric units.", absolute_threshold
+        )
     else:
-        logger.debug("No ROPE value provided, no ties will be recorded.")
+        logger.debug("No tie rule provided, no ties will be recorded.")
     no_algs = len(alg_names)
     no_pairs = no_algs * (no_algs - 1) // 2
     out_array = -1 * np.ones(
@@ -56,18 +73,34 @@ def _construct_no_paired(
     ):
         i_name = alg_names[i]
         j_name = alg_names[j]
-        deltas = data_mean[i_name] - data_mean[j_name]
+        deltas = (data_mean[i_name] - data_mean[j_name]).to_numpy(dtype=float)
         if data_sd is not None:
-            th = lrope_value * np.sqrt(
-                np.power(data_sd[i_name], 2) + np.power(data_sd[j_name], 2)
+            # Eq. (3)-(4): Cohen's d pools by the *average* of the two
+            # variances, so the threshold is d * sqrt((s_i^2 + s_j^2) / 2).
+            th = effect_size * np.sqrt(
+                (
+                    np.power(data_sd[i_name].to_numpy(dtype=float), 2)
+                    + np.power(data_sd[j_name].to_numpy(dtype=float), 2)
+                )
+                / 2.0
             )
-        elif unpaired_rope_value is not None:
-            th = unpaired_rope_value
+        elif absolute_threshold is not None:
+            th = absolute_threshold
         else:
             th = 0.0
-        w1 = np.sum(deltas > th)
-        w2 = np.sum(deltas < -th)
-        ties = deltas.shape[0] - w1 - w2
+
+        # A missing measure is neither a win nor a loss (Wainer 2023, sec. 5.7):
+        # the pair simply does not play that match, so it must not fall through
+        # into the tie count either.
+        valid = np.isfinite(deltas)
+        if isinstance(th, np.ndarray):
+            valid &= np.isfinite(th)
+            th = th[valid]
+        deltas = deltas[valid]
+
+        w1 = int(np.sum(deltas > th))
+        w2 = int(np.sum(deltas < -th))
+        ties = int(deltas.shape[0]) - w1 - w2
         out_array[k, :] = i, j, w1, w2, ties
     return out_array
 
@@ -76,8 +109,14 @@ def _construct_lrope(
     data: pd.DataFrame,
     alg_names: list[str],
     dataset_col: str | int,
-    lrope_value: float,
+    effect_size: float,
 ) -> np.ndarray:
+    """Build the win table from repeated measures per algorithm per data set.
+
+    Uses the paired local ROPE of Wainer (2023), Eq. (6): a data set is a win
+    only when the mean of the per-fold differences exceeds ``effect_size``
+    standard deviations of those differences.
+    """
     logger.debug("Using paired BBT test.")
     no_algs = len(alg_names)
     no_pairs = no_algs * (no_algs - 1) // 2
@@ -85,28 +124,38 @@ def _construct_lrope(
         (no_pairs, 5),  # alg_1, alg_2, 1_wins, 2_wins, ties
         dtype=np.int32,
     )
-    for dataset_name in data[dataset_col].unique():
+    dataset_names = data[dataset_col].unique()
+    for dataset_name in tqdm(
+        dataset_names,
+        total=len(dataset_names),
+        desc="Constructing local ROPE win table",
+        leave=False,
+    ):
         data_subset = data[data[dataset_col] == dataset_name]
-        for i, j, k in tqdm(
-            _gen_pairs(no_algs),
-            total=no_pairs,
-            desc=f"Constructing local ROPE win table for dataset {dataset_name}",
-        ):
+        for i, j, k in _gen_pairs(no_algs):
             i_name = alg_names[i]
             j_name = alg_names[j]
-            deltas = data_subset[i_name] - data_subset[j_name]
-            mean = np.mean(deltas)
-            sd = np.std(deltas)
-            win1 = int(mean > lrope_value * sd)
-            win2 = int(mean < -lrope_value * sd)
-            ties = 1 - win1 - win2
-            out_array[k, :] = (
-                i,
-                j,
-                out_array[k, ALG1_COL] + win1,
-                out_array[k, ALG2_COL] + win2,
-                out_array[k, TIE_COL] + ties,
-            )
+            out_array[k, 0] = i
+            out_array[k, 1] = j
+
+            deltas = (data_subset[i_name] - data_subset[j_name]).to_numpy(dtype=float)
+            deltas = deltas[np.isfinite(deltas)]
+            if deltas.size == 0:
+                # At least one of the two did not run on this data set: it is
+                # neither a win, nor a loss, nor a tie (Wainer 2023, sec. 5.7).
+                continue
+
+            mean = float(np.mean(deltas))
+            # Eq. (6): the paired effect size scales by the standard deviation
+            # of the per-fold differences. A single fold leaves no spread to
+            # scale by, so the comparison falls back to the sign of the mean.
+            sd = float(np.std(deltas, ddof=1)) if deltas.size > 1 else 0.0
+
+            win1 = int(mean > effect_size * sd)
+            win2 = int(mean < -effect_size * sd)
+            out_array[k, ALG1_COL] += win1
+            out_array[k, ALG2_COL] += win2
+            out_array[k, TIE_COL] += 1 - win1 - win2
     return out_array
 
 
@@ -128,10 +177,25 @@ def _construct_win_table(
     data: pd.DataFrame,
     data_sd: pd.DataFrame | None,
     dataset_col: str | int | None,
-    local_rope_value: float | None,
     tie_solver: str,
     maximize: bool,
+    local_rope_effect_size: float | None = None,
+    absolute_tie_threshold: float | None = None,
 ) -> tuple[np.ndarray, list[str]]:
+    """Turn a results table into the win/loss/tie table the BBT model observes.
+
+    Which tie rule applies is decided by the shape of the data, so the two
+    thresholds are passed separately rather than sharing one number: they are
+    measured on different scales and are not interchangeable.
+
+    ==========================================  ==========================
+    Input                                       Tie rule
+    ==========================================  ==========================
+    repeated rows per data set                  ``local_rope_effect_size``
+    one row per data set, ``data_sd`` given     ``local_rope_effect_size``
+    one row per data set, no ``data_sd``        ``absolute_tie_threshold``
+    ==========================================  ==========================
+    """
     # Extract algorithm names
     algorithms_names = data.columns.tolist()
     if isinstance(dataset_col, int):
@@ -155,15 +219,15 @@ def _construct_win_table(
     if dataset_col is None or data.shape[0] == data[dataset_col].nunique():
         table = _construct_no_paired(
             data_mean=data,
-            lrope_value=local_rope_value or 0.0,
+            effect_size=local_rope_effect_size or 0.0,
             data_sd=data_sd,
             alg_names=algorithms_names,
-            unpaired_rope_value=local_rope_value,
+            absolute_threshold=absolute_tie_threshold,
         )
     else:
         table = _construct_lrope(
             data=data,
-            lrope_value=local_rope_value or 0.0,
+            effect_size=local_rope_effect_size or 0.0,
             dataset_col=dataset_col,
             alg_names=algorithms_names,
         )
@@ -172,6 +236,28 @@ def _construct_win_table(
         tie_solver=tie_solver,
     )
     return table, algorithms_names
+
+
+def _check_model_names(
+    known: set[str],
+    control: str | None,
+    selected: Iterable[str] | None,
+) -> None:
+    """Reject unknown model names instead of quietly answering another question.
+
+    A misspelled ``control`` used to fall through to the full all-pairs table,
+    and a misspelled entry in ``selected`` surfaced as an error from pandas.
+    """
+    if control is not None and control not in known:
+        raise ValueError(
+            f"Unknown control_model {control!r}. Available models: {sorted(known)}."
+        )
+    if selected is not None:
+        unknown = sorted(set(selected) - known)
+        if unknown:
+            raise ValueError(
+                f"Unknown selected_models {unknown}. Available models: {sorted(known)}."
+            )
 
 
 def _get_pwin(
@@ -195,6 +281,8 @@ def _get_pwin(
     order = np.argsort(-mean_beta)
     ordered_names = np.array(alg_names)[order]
 
+    _check_model_names(set(ordered_names.tolist()), control, selected)
+
     # Exponentiate to get strengths (exp(beta))
     strengths = np.exp(beta_samples[:, order])
 
@@ -208,11 +296,16 @@ def _get_pwin(
         ordered_names = ordered_names[indices]
         strengths = strengths[:, indices]
         n_algs = len(indices)
+        if n_algs < 2:
+            raise ValueError(
+                "At least two models are needed for a comparison; "
+                f"selected_models resolved to {sorted(selected_set)}."
+            )
 
     comparison_names = []
 
     # Generate comparisons
-    if control is None or control not in ordered_names:
+    if control is None:
         # All pairwise comparisons
         n_comparisons = n_algs * (n_algs - 1) // 2
         samples = np.empty((strengths.shape[0], n_comparisons))
@@ -247,13 +340,7 @@ def _get_pwin(
 
 
 def _hdi(samples: np.ndarray, hdi_prob: float = 0.89) -> np.ndarray:
-    def newhdi(arr):
-        x = np.sort(arr)
-        n = len(x)
-        exclude = int(n - np.floor(n * hdi_prob) - 1)
-        low_poss = x[:exclude]
-        upp_poss = x[(n - exclude) :]
-        best = np.argmin(upp_poss - low_poss)
-        return low_poss[best], upp_poss[best]
-
-    return np.apply_along_axis(newhdi, 0, samples)
+    """Column-wise highest-density interval (see ``common.hdi_from_samples``)."""
+    return np.apply_along_axis(
+        lambda arr: np.array(hdi_from_samples(arr, hdi_prob)), 0, samples
+    )

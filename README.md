@@ -2,12 +2,13 @@
 
 ---
 
-BBT-Test is a Python package for Bayesian Bradley-Terry model along with utilities for multi-algorithm multi-dataset statistical evaluation.
+BBT-Test is a Python package for Bayesian Bradley-Terry model along with utilities for multi-algorithm multi-dataset statistical evaluation. It also ships the two Bayesian t-tests of Benavoli et al. (2017) for comparing **two** algorithms: the correlated t-test (one dataset) and the hierarchical correlated t-test (many datasets).
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quickstart](#quickstart)
+- [Comparing two algorithms: the t-tests](#comparing-two-algorithms-the-t-tests)
 - [License](#license)
 
 ## Installation
@@ -51,13 +52,18 @@ To generate data for BBT model, fit the `BBTTest` model with the dataframe
 from bbttest import BBTTest
 
 model = BBTTest(
-    local_rope_value=0.01, # Here you can define what is a tie in case of unpaired data, default is None
-    # In this case the model will assume that if difference is below 0.01 there's a tie.
+    absolute_tie_threshold=0.01, # What counts as a tie, in the units of your metric.
+    # Here, a difference in score below 0.01 is a tie. Default is None (no ties).
 ).fit(
     df,
     dataset_col="dataset", # If dataset column is present, specify it here
 )
 ```
+
+#### Tie parameters
+The two are on different scales and are not interchangeable. 
+- Use `absolute_tie_threshold` when you have one score per model per dataset. It is a difference in the units of your metric. 
+- Use `local_rope_effect_size` when you have repeated scores per dataset (or pass `data_sd`) — it is a Cohen's *d*, a multiple of the observed spread.
 
 #### Evaluating BBT when reporting errors
 
@@ -65,7 +71,7 @@ By default BBT assumes that the goal of the evaluation is to maximize the metric
 
 ```python
 model = BBTTest(
-    local_rope_value=0.01,
+    absolute_tie_threshold=0.01,
     maximize=False, # Set to False if the metric should be minimized
 ).fit(
     df,
@@ -89,8 +95,11 @@ df = pd.DataFrame({
 })
 
 model = BBTTest(
-    local_rope_value=0.1, # In this case ties will be counted if the difference is below square root mean of
-    # standard deviations multiplied by local_rope_value
+    local_rope_effect_size=0.4, # A Cohen's d, not a difference in metric units.
+    # With repeated rows a dataset counts as a win only when the mean of the per-fold
+    # differences exceeds 0.4 sample standard deviations of those differences
+    # (Wainer 2023, Eq. 6). With `data_sd` instead, the spread is pooled across the two
+    # models as sqrt((sd_a^2 + sd_b^2) / 2).
 ).fit(
     df,
     dataset_col="dataset",
