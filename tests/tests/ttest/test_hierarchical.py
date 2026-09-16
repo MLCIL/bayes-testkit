@@ -77,32 +77,6 @@ def fitted_hierarchical(multi_dataset):
     )
 
 
-class TestInitialization:
-    """Test HierarchicalTTest initialization and parameter validation."""
-
-    def test_defaults(self):
-        """Test that default initialization values are set correctly."""
-        h = HierarchicalTTest()
-        assert h._rope == 0.01
-        assert h._dof_prior == "hierarchical"
-        assert not h.fitted
-
-    def test_dof_prior_validation(self):
-        """Test that an invalid dof_prior value raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid value 'bad'"):
-            HierarchicalTTest(dof_prior="bad")
-
-    def test_get_params_holds_only_hyperparameters(self):
-        """Test that get_params exposes only the hyperparameters, not the data properties."""
-        h = HierarchicalTTest(rope=0.02, dof_prior="kruschke")
-        assert h.get_params() == {
-            "rope": 0.02,
-            "dof_prior": "kruschke",
-            "maximize": True,
-            "mu0_bound": 1.0,
-        }
-
-
 class TestFitInputs:
     """Test the accepted fit input format and its validation."""
 

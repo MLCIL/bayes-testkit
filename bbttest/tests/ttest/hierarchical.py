@@ -16,7 +16,7 @@ from ._stats import (
     resolve_rho,
     resolve_rope,
 )
-from ._types import ALL_TTEST_COLUMNS, DOF_PRIORS, HIERARCHICAL_PLOT_KINDS
+from ._types import ALL_TTEST_COLUMNS, HIERARCHICAL_PLOT_KINDS
 from .model import _sample_hierarchical
 from .plots import (
     plot_hierarchical_forest,
@@ -69,15 +69,6 @@ class HierarchicalTTest(BaseBayesianTest):
 
             - a scalar is a half-width `r`, giving the band `[-r, r]`
             - a 2-tuple is used as an explicit `(lo, hi)` band
-
-    dof_prior: str, default `hierarchical`
-        The prior on the degrees of freedom of the Student distribution over the
-        per-dataset means, which governs how tolerant the model is of datasets whose
-        mean difference is far from the others.
-
-            - `hierarchical` - Gamma with uniform hyper-priors on its shape and rate. See [1]_.
-            - `kruschke` - fixed Gamma(1, 0.0345), balancing nearly normal and heavy-tailed distributions.
-            - `juarez_steel` - fixed Gamma(2, 0.1), assigning larger prior probability to normal distributions.
 
     maximize: bool, default True
         Whether higher scores indicate better performance (e.g. accuracy/f1). If using a
@@ -143,15 +134,13 @@ class HierarchicalTTest(BaseBayesianTest):
     def __init__(
         self,
         rope: float | tuple[float, float] = 0.01,
-        dof_prior: str = "hierarchical",
         maximize: bool = True,
         mu0_bound: float = 1.0,
     ):
-        validate_string(dof_prior, DOF_PRIORS, "dof_prior")
         if mu0_bound <= 0:
             raise ValueError(f"mu0_bound must be positive, got {mu0_bound}.")
         self._rope = rope
-        self._dof_prior = dof_prior
+        self._dof_prior = "hierarchical"
         self._maximize = maximize
         self._mu0_bound = mu0_bound
         self._fitted = False
