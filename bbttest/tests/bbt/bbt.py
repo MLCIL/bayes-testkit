@@ -1,8 +1,12 @@
+import warnings
 from collections.abc import Iterable, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pymc as pm
+
+from bbttest.tests.common import BaseBayesianTest, _validate_params, hdi_from_samples
 
 from ._types import (
     ALL_PROPERTIES_COLUMNS,
@@ -11,48 +15,80 @@ from ._types import (
     ReportedPropertyColumnType,
     TieSolverType,
 )
-from ._utils import _validate_params
 from .alg import _construct_win_table, _get_pwin, _hdi
 from .model import _mcmcbbt_pymc
 from .plots import plot_cdd_diagram
 
 
-class BBTTest:
+class BBTTest(BaseBayesianTest):
     """
     BBT model estimator used for multi-dataset multi-model comparison [1]_.
     The model estimates posterior probabilities for each pair of the model.
 
     Parameters
     ----------
-    local_rope_value: float | None, default 0.1
-        The value of the local ROPE to be used when constructing win/tie/loss pairs. If the models is unpaired (i.e., only one score per model per dataset),
-        this value is used to determine the threshold for ties in the followin manner:
+    local_rope_value: float | None, default None
+        Deprecated. Fills in for whichever of `local_rope_effect_size` and
+        `absolute_tie_threshold` applies to the data, which made a single number mean two
+        different things on two different scales. Pass the explicit parameter instead;
+        this one will be removed in a future release.
 
-            - score_a - score_b > local_rope_value => model A wins
-            - score_b - score_a > local_rope_value => model B wins
-            - otherwise => tie
+    local_rope_effect_size: float | None, default None
+        The local ROPE of [1]_, sec. 6.1, as a Cohen's d **effect size** -- a multiple of
+        the spread of the scores, not a difference in the metric. It applies whenever the
+        within-dataset spread is known: repeated rows per dataset, or `data_sd` passed to
+        :meth:`fit`.
 
-        In case of paired BBT (i.e. multiple readings per model per dataset or data_sd provided), the ties are determined based on the following conditions:
+        With repeated rows (Eq. 6), per dataset::
 
-            - sigma = sqrt(sd_a^2 + sd_b^2)
-            - score_a - score_b > local_rope_value * sigma => model A wins
-            - score_b - score_a > local_rope_value * sigma => model B wins
-            - otherwise => tie
+            d = mean(score_a - score_b) over the folds
+            s = sample sd(score_a - score_b) over the folds
+            d >  local_rope_effect_size * s  => model A wins
+            d < -local_rope_effect_size * s  => model B wins
+            otherwise                        => tie
 
+        With `data_sd` (Eq. 4) the spread is pooled across the two models instead::
+
+            s = sqrt((sd_a^2 + sd_b^2) / 2)
+
+        The paper argues for 0.4, or 0.2 with 10 repetitions of 10-fold cross-validation.
         If None, no ties are recorded.
+
+    absolute_tie_threshold: float | None, default None
+        A tie threshold **in the units of the metric**, applied when there is one score
+        per model per dataset and no `data_sd` -- fixed-split designs, where no
+        within-dataset spread exists to form an effect size from::
+
+            score_a - score_b >  absolute_tie_threshold => model A wins
+            score_a - score_b < -absolute_tie_threshold => model B wins
+            otherwise                                   => tie
+
+        This extends [1]_, which only defines the effect-size ROPE. It exists so that a
+        difference of, say, 1e-4 does not count as a win. Choose it on the scale of the
+        metric (e.g. 0.01 for accuracy). If None, no ties are recorded.
 
     tie_solver: str, defaults to `add`
         The strategy to handle ties when sampling the BBT model.
 
             - `add` - Adds 1 win to both players for each tie.
-            - `spread` - Adds 0.5 win to both players for each tie.
+            - `spread` - Adds `ceil(ties / 2)` wins to both players.
             - `forget` - Ignores the ties.
             - `davidson` - Uses Davidson's method to handle ties in the BBT model. See [1]_.
-        Note: we found inconsistencies in mathematical foundations of the `spread` method, which we still investigate.
-            For the time being, we recommend using alternative methods such as `add`.
+
+        Note: [1]_ uses `spread`, and reports `add`, `forget` and `spread` to fit equally
+        well (sec. 6.2). We default to `add` because `spread` is not exactly
+        representable: half a victory to each player is not an integer count, and only
+        integer counts are valid observations of the Binomial likelihood. Rounding is
+        therefore unavoidable, and rounding up -- as the paper does -- awards
+        `ceil(ties / 2)` to *both* players, inflating the number of matches by one for
+        every odd tie count. `add` needs no rounding. Its own cost is that each tie enters
+        the match total twice, so it concentrates the posterior more than `spread` does;
+        `forget` discards the ties entirely. All four remain available.
 
     hyper_prior: str, default `log_normal`
-        The hyper prior distribution to be used for the BBT MCMC sampling.
+        The hyper prior distribution for `sigma`, the spread of the abilities: the
+        log-normal of [1]_, Eq. (2), or the half-normal / half-Cauchy alternatives
+        discussed in sec. 4.1.
 
     scale: float, default 1.0
         The scale parameter for the hyper prior distribution.
@@ -76,7 +112,8 @@ class BBTTest:
     ...     'model_b': [0.7, 0.8, 0.85],
     ...     'model_c': [0.6, 0.65, 0.7]
     ... })
-    >>> model = BBTTest(local_rope_value=0.01, tie_solver="add")
+    >>> # One score per dataset, so the tie rule is on the metric scale.
+    >>> model = BBTTest(absolute_tie_threshold=0.01, tie_solver="add")
     >>> model.fit(data, dataset_col='dataset')
     >>> model.posterior_table(rope_value=(0.45, 0.55))
 
@@ -94,6 +131,8 @@ class BBTTest:
     _STRONG_INTERPRETATION_BETTER_THRESHOLD = 0.70
     _STRONG_INTERPRETATION_EQUAL_THRESHOLD = 0.55
 
+    _diagnostics_label = "BBT"
+
     @_validate_params
     def __init__(
         self,
@@ -102,18 +141,51 @@ class BBTTest:
         hyper_prior: HyperPriorType = "log_normal",
         maximize: bool = True,
         scale: float = 1.0,
+        local_rope_effect_size: float | None = None,
+        absolute_tie_threshold: float | None = None,
     ):
+        if local_rope_value is not None:
+            warnings.warn(
+                "'local_rope_value' is deprecated because it means an effect size on "
+                "paired data but a difference in metric units on unpaired data. Pass "
+                "'local_rope_effect_size' (a Cohen's d, e.g. 0.4) or "
+                "'absolute_tie_threshold' (metric units, e.g. 0.01) explicitly.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._local_rope_value = local_rope_value
+        self._local_rope_effect_size = local_rope_effect_size
+        self._absolute_tie_threshold = absolute_tie_threshold
         self._tie_solver = tie_solver
-        self._use_davidson = self._tie_solver == "davidson"
         self._hyper_prior = hyper_prior
         self._maximize = maximize
         self._scale = scale
         self._fitted = False
 
-    def _check_if_fitted(self):
-        if not self._fitted:
-            raise RuntimeError("The model must be fitted before accessing this method.")
+    def _resolve_tie_rules(self) -> tuple[float | None, float | None]:
+        """Resolve the two tie thresholds, honouring the deprecated alias.
+
+        Returns ``(local_rope_effect_size, absolute_tie_threshold)``. The
+        deprecated ``local_rope_value`` fills in for whichever is unset, which
+        reproduces the old behaviour of one number serving both scales.
+        """
+        effect_size = self._local_rope_effect_size
+        absolute = self._absolute_tie_threshold
+        if self._local_rope_value is not None:
+            if effect_size is None:
+                effect_size = self._local_rope_value
+            if absolute is None:
+                absolute = self._local_rope_value
+        return effect_size, absolute
+
+    @property
+    def _use_davidson(self) -> bool:
+        """Whether to fit the Davidson tie extension.
+
+        Derived on access rather than frozen in ``__init__`` so that
+        ``set_params(tie_solver="davidson")`` actually takes effect.
+        """
+        return self._tie_solver == "davidson"
 
     @staticmethod
     def _get_interpretation_columns(
@@ -124,11 +196,6 @@ class BBTTest:
             if interpretation == "weak"
             else "strong_interpretation_raw"
         )
-
-    @property
-    def fitted(self):
-        """Whether the model has been fitted."""
-        return self._fitted
 
     def fit(
         self,
@@ -150,32 +217,256 @@ class BBTTest:
             Dataframe containing standard deviations of the scores for the models on the datasets.
         dataset_col : str, optional
             Column name for the dataset identifier. Defaults to "dataset".
+        **pymc_kwargs
+            Sampler options forwarded to ``pm.sample`` (draws, tune, chains, cores,
+            target_accept, random_seed, progressbar, ...).
 
         Returns
         -------
         self : BBTTest
             Fitted BBTTest instance
+
+        Warns
+        -----
+        UserWarning
+            If the sampler diverged or the chains did not mix. Wainer (2023), sec. 2.2
+            stresses that convergence must be checked on every run; see
+            :meth:`diagnostics`.
         """
+        effect_size, absolute_threshold = self._resolve_tie_rules()
         self._win_table, self._algorithms = _construct_win_table(
             data=data,
             data_sd=data_sd,
             dataset_col=dataset_col,
-            local_rope_value=self._local_rope_value,
+            local_rope_effect_size=effect_size,
+            absolute_tie_threshold=absolute_threshold,
             tie_solver=self._tie_solver,
             maximize=self._maximize,
         )
 
-        self._fit_posterior = _mcmcbbt_pymc(
+        self._fit_posterior, self._pymc_model = _mcmcbbt_pymc(
             table=self._win_table,
             use_davidson=self._use_davidson,
             hyper_prior=self._hyper_prior,
             scale=self._scale,
             **pymc_kwargs,
         )
+        # Expose the posterior through the shared ``idata_`` endpoint as well;
+        # ``_fit_posterior`` stays for backward compatibility.
+        self._idata = self._fit_posterior
 
         self._fitted = True
+        self._warn_on_bad_diagnostics()
 
         return self
+
+    # -- diagnostics --------------------------------------------------------
+
+    def _diagnostic_vars(self) -> list[str]:
+        """Restrict the diagnostics to the model's own parameters."""
+        var_names = ["beta", "sigma"]
+        if self._use_davidson:
+            var_names += ["nu", "sigmanu"]
+        return var_names
+
+    def posterior_predictive_check(
+        self,
+        hdi_probs: Sequence[float] = (0.5, 0.9, 0.95, 1.0),
+        random_seed: int | None = None,
+    ) -> pd.DataFrame:
+        """Posterior predictive check of the fitted model.
+
+        Replays the observed win counts through the fitted model and reports, for each
+        HDI mass, the proportion of the observed counts that fall inside the HDI of the
+        replicated counts. This is the non-graphical form of the check in Wainer (2023),
+        sec. 5.4: ideally the proportion inside the 90% HDI is at least 0.9.
+
+        Parameters
+        ----------
+        hdi_probs : Sequence[float], optional
+            HDI masses to evaluate. Defaults to the paper's ``(0.5, 0.9, 0.95, 1.0)``.
+        random_seed : int | None, optional
+            Seed for the replicated draws.
+
+        Returns
+        -------
+        pd.DataFrame
+            One row per HDI mass, with a ``wins`` proportion and, when the Davidson tie
+            model is used, a ``ties`` proportion as well.
+        """
+        self._check_if_fitted()
+        var_names = ["win1_obs"] + (["ties_obs"] if self._use_davidson else [])
+        replicated_by_var = self._replicate_counts(var_names, random_seed)
+
+        observed = {
+            "win1_obs": self._win_table[:, 2],
+            "ties_obs": self._win_table[:, 4],
+        }
+        labels = {"win1_obs": "wins", "ties_obs": "ties"}
+
+        records = []
+        for prob in hdi_probs:
+            row: dict[str, float] = {"hdi": float(prob)}
+            for var in var_names:
+                replicated = replicated_by_var[var]
+                inside = [
+                    hdi_from_samples(replicated[:, k], prob)[0]
+                    <= observed[var][k]
+                    <= hdi_from_samples(replicated[:, k], prob)[1]
+                    for k in range(replicated.shape[1])
+                ]
+                row[labels[var]] = float(np.mean(inside))
+            records.append(row)
+        return pd.DataFrame.from_records(records)
+
+    def _replicate_counts(
+        self, var_names: Sequence[str], random_seed: int | None
+    ) -> dict[str, np.ndarray]:
+        """Replay the observed counts through the model, flattened to ``(draws, matchups)``."""
+        with self._pymc_model:
+            ppc = pm.sample_posterior_predictive(
+                self._fit_posterior,
+                var_names=list(var_names),
+                progressbar=False,
+                random_seed=random_seed,
+            )
+        return {
+            var: ppc.posterior_predictive[var]
+            .to_numpy()
+            .reshape(-1, len(self._win_table))
+            for var in var_names
+        }
+
+    def plot_posterior_predictive(
+        self,
+        pairs: Sequence[tuple[str, str]],
+        random_seed: int | None = None,
+        axes: Sequence[plt.Axes] | None = None,
+    ) -> np.ndarray:
+        """Graphical posterior predictive check for selected pairs of models.
+
+        For each pair, draws the histogram of the replicated win counts with the
+        observed count as a vertical line (Wainer 2023, sec. 5.4). Wins are counted for
+        the model that comes first in the win table, which the panel title names.
+
+        Parameters
+        ----------
+        pairs : Sequence[tuple[str, str]]
+            Pairs of model names to plot, one panel each, in any order within a pair.
+        random_seed : int | None, optional
+            Seed for the replicated draws.
+        axes : Sequence[plt.Axes] | None, optional
+            One axes per pair. If None, a new row of subplots is created.
+
+        Returns
+        -------
+        np.ndarray
+            The axes, one per pair.
+        """
+        self._check_if_fitted()
+        replicated = self._replicate_counts(["win1_obs"], random_seed)["win1_obs"]
+        if axes is None:
+            _, axes = plt.subplots(1, len(pairs), figsize=(4.3 * len(pairs), 3.6))
+        axes = np.atleast_1d(axes)
+
+        for ax, (a, b) in zip(axes, pairs, strict=True):
+            lo, hi = sorted((self._algorithms.index(a), self._algorithms.index(b)))
+            (k,) = np.flatnonzero(
+                (self._win_table[:, 0] == lo) & (self._win_table[:, 1] == hi)
+            )
+            reps, observed = replicated[:, k], self._win_table[k, 2]
+            n = self._win_table[k, 2] + self._win_table[k, 3]
+            ax.hist(
+                reps,
+                bins=np.arange(reps.min(), reps.max() + 2) - 0.5,
+                density=True,
+                color="C0",
+                alpha=0.6,
+            )
+            ax.axvline(observed, color="k", linewidth=2.5)
+            ax.set_title(
+                f"{a} vs {b}\nwins for {self._algorithms[lo]} (obs={observed}, n={n})",
+                fontsize=9,
+            )
+            ax.set_xlabel("replicated wins")
+        axes[0].set_ylabel("density")
+        return axes
+
+    # -- fitted data ---------------------------------------------------------
+
+    @property
+    def algorithms(self) -> list[str]:
+        """The algorithm names, in the column order of the ``beta`` posterior.
+
+        Needed to line up ``idata_.posterior["beta"]`` with the models it
+        describes, since the posterior itself carries only positional indices.
+        """
+        self._check_if_fitted()
+        return list(self._algorithms)
+
+    @property
+    def win_table(self) -> pd.DataFrame:
+        """The win counts the model was actually fitted to.
+
+        The scores go in, per-dataset win counts come out, and everything
+        downstream is a function of this table alone -- which is what makes BBT
+        metric-agnostic. Inspecting it is the quickest way to see what a tie rule
+        did, and to spot pairs with too few decisive matches to support a claim.
+
+        Returns
+        -------
+        pd.DataFrame
+            One row per pair, with ``alg1``/``alg2`` and the ``wins1``, ``wins2``
+            and ``ties`` counts between them.
+        """
+        self._check_if_fitted()
+        return pd.DataFrame(
+            {
+                "alg1": [self._algorithms[int(row[0])] for row in self._win_table],
+                "alg2": [self._algorithms[int(row[1])] for row in self._win_table],
+                "wins1": self._win_table[:, 2].astype(int),
+                "wins2": self._win_table[:, 3].astype(int),
+                "ties": self._win_table[:, 4].astype(int),
+            }
+        )
+
+    def pairwise_samples(self, pairs: Iterable[tuple[str, str]]) -> pd.DataFrame:
+        r"""Posterior draws of the pairwise probability for the given pairs.
+
+        The Bradley-Terry probability that ``a`` beats ``b`` is
+        ``w_a / (w_a + w_b)`` with ``w = exp(beta)``, i.e. the logistic of the
+        ability difference. :meth:`posterior_table` summarises these draws;
+        this returns them, for plotting a density or for any interval the
+        summary does not cover.
+
+        Parameters
+        ----------
+        pairs : Iterable[tuple[str, str]]
+            Pairs of algorithm names. Each is read in the given order, so
+            ``("a", "b")`` yields ``P(a > b)`` and ``("b", "a")`` its complement.
+
+        Returns
+        -------
+        pd.DataFrame
+            One column per pair, named ``"a > b"``, holding the posterior draws
+            of that probability flattened across chains.
+        """
+        self._check_if_fitted()
+        beta = self.idata_.posterior["beta"].to_numpy()
+        beta = beta.reshape(-1, beta.shape[-1])
+        index = {name: i for i, name in enumerate(self._algorithms)}
+
+        columns = {}
+        for left, right in pairs:
+            unknown = [name for name in (left, right) if name not in index]
+            if unknown:
+                raise ValueError(
+                    f"Unknown algorithms {unknown}; the fitted models are "
+                    f"{sorted(index)}."
+                )
+            difference = beta[:, index[left]] - beta[:, index[right]]
+            columns[f"{left} > {right}"] = 1.0 / (1.0 + np.exp(-difference))
+        return pd.DataFrame(columns)
 
     @property
     def beta_ranking(self) -> dict[str, float]:
@@ -293,13 +584,16 @@ class BBTTest:
         out_table["hdi_high"] = hdi_values[1]
         out_table["delta"] = out_table["hdi_high"] - out_table["hdi_low"]
 
-        if round_ndigits is not None:
-            return out_table.round(round_ndigits)[["pair", *columns]]
+        columns = list(columns)
         for col in columns:
             if col not in out_table.columns:
                 raise ValueError(
-                    f"Column {col} is not available in the posterior table."
+                    f"Column {col} is not available in the posterior table. "
+                    f"Available columns: {self.ALL_PROPERTIES_COLUMNS}."
                 )
+
+        if round_ndigits is not None:
+            return out_table.round(round_ndigits)[["pair", *columns]]
         return out_table[["pair", *columns]]
 
     @_validate_params
@@ -425,13 +719,15 @@ class BBTTest:
             round_ndigits=None,
         )
         interpretation_col = self._get_interpretation_columns(interpretation)
+        # ``pos`` is the aggregated rank: 1 is the best algorithm, i.e. the
+        # highest mean beta. ``_plot_cdd_diagram`` draws ``pos = 1`` at the
+        # "better" end of the ruler, so the sort must be descending.
         models_df = pd.DataFrame(
             {
                 "model": self._algorithms,
-                "pos": list(range(1, len(self._algorithms) + 1)),
                 "mean": self.beta_ranking.values(),
             }
-        ).sort_values("mean")
+        ).sort_values("mean", ascending=False)
         models_df["pos"] = range(1, len(models_df) + 1)
 
         return plot_cdd_diagram(

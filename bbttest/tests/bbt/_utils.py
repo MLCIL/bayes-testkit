@@ -1,73 +1,23 @@
-from __future__ import annotations
+"""BBT-specific utilities."""
 
-import sys
-from functools import wraps
-from typing import (
-    Literal,
-    get_args,
-    get_origin,
-)
-
-from pymc.distributions import Cauchy, LogNormal, Normal
-
-if sys.version_info >= (3, 12):
-    from typing import TypeAliasType
-else:
-    from typing_extensions import TypeAliasType
-
-
-def is_literal_value(value: object, typx: object) -> bool:
-    if isinstance(typx, TypeAliasType):
-        typx = typx.__value__
-    if get_origin(typx) is Literal:
-        return value in get_args(typx)
-    return False
-
-
-def _validate_params(func):
-    from inspect import Parameter, signature
-
-    sig = signature(func)
-    accepts_kwargs = any(
-        param.kind == Parameter.VAR_KEYWORD for param in sig.parameters.values()
-    )
-
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if not accepts_kwargs:
-            for kwarg in kwargs:
-                if kwarg not in sig.parameters:
-                    raise ValueError(f"Unexpected keyword argument '{kwarg}'")
-        bound_args = sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-        for name, value in bound_args.arguments.items():
-            param = sig.parameters[name]
-            if param.kind == Parameter.VAR_KEYWORD:
-                continue
-            # If type annotation is a Literal, validate the value
-            if param.annotation is not param.empty and is_literal_value(
-                value, param.annotation
-            ):
-                continue  # Valid value, continue to next parameter
-            elif (
-                param.annotation is not param.empty
-                and get_origin(param.annotation) is Literal
-            ):
-                raise ValueError(
-                    f"Invalid value '{value}' for parameter '{name}'. Expected one of {get_args(param.annotation)}."
-                )
-        return func(*args, **kwargs)
-
-    return wrapper
+from pymc.distributions import HalfCauchy, HalfNormal, LogNormal
 
 
 def _get_distribution_for_prior(prior: str, scale: float):
+    """Build the hyper-prior for ``sigma``, the spread of the abilities.
+
+    ``sigma`` is the scale of ``beta ~ Normal(0, sigma)`` and so must be
+    positive. The alternatives to the log-normal of Wainer (2023), Eq. (2) are
+    therefore the *half*-normal and half-Cauchy (sec. 4.1); an unbounded Normal
+    or Cauchy puts mass on negative scales, for which the model's
+    log-probability is ``-inf`` and sampling cannot even start.
+    """
     match prior:
         case "log_normal":
             return LogNormal("sigma", mu=0, sigma=scale)
         case "cauchy":
-            return Cauchy("sigma", alpha=0, beta=scale)
+            return HalfCauchy("sigma", beta=scale)
         case "normal":
-            return Normal("sigma", mu=0, sigma=scale)
+            return HalfNormal("sigma", sigma=scale)
         case _:
             raise ValueError(f"Unsupported hyperprior: {prior}")
