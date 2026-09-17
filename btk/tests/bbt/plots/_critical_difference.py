@@ -8,6 +8,52 @@ NO_EQUIVALENCE_CLIQUES_WARNING_TEMPLATE = """No groups of equivalent algorithms 
 CDD plot will not contain any equivalence bars."""
 
 
+def describe_interpretation(
+    interpretation_col: str,
+    rope_value: tuple[float, float] | None = None,
+    weak_threshold: float | None = None,
+    equal_threshold: float | None = None,
+) -> str:
+    """Describe in words the rule that joins two models with an equivalence bar.
+
+    Parameters
+    ----------
+    interpretation_col : str
+        Column the bars were derived from, e.g. ``"weak_interpretation_raw"``
+        or ``"strong_interpretation_raw"``.
+    rope_value : tuple[float, float], optional
+        ROPE used by the weak reading. Defaults to (0.45, 0.55).
+    weak_threshold : float, optional
+        Posterior mass the weak reading requires. Defaults to 0.95.
+    equal_threshold : float, optional
+        Upper bound on the posterior mean used by the strong reading. Defaults
+        to 0.55.
+
+    Returns
+    -------
+    str
+        A single line naming the reading rule, drawn under the diagram.
+    """
+    if interpretation_col.startswith("weak"):
+        if rope_value is None:
+            raise ValueError("rope_value must be provided for weak interpretation")
+        return (
+            f"Weak interpretation: a bar joins models with "
+            f"P(\u03c0 \u2208 [{rope_value[0]:g}, {rope_value[1]:g}]) "
+            f"\u2265 {weak_threshold:g}"
+        )
+    if interpretation_col.startswith("strong"):
+        if equal_threshold is None:
+            raise ValueError(
+                "equal_threshold must be provided for strong interpretation"
+            )
+        return (
+            f"Strong interpretation: a bar joins models with "
+            f"{1 - equal_threshold:g} \u2264 E[\u03c0] \u2264 {equal_threshold:g}"
+        )
+    return f"A bar joins models called equivalent by {interpretation_col!r}"
+
+
 def get_bars_for_cdd(
     posterior_df: pd.DataFrame,
     models_df: pd.DataFrame,
@@ -89,6 +135,7 @@ def _plot_cdd_diagram(
     ax: plt.Axes | None = None,
     xlabel_spacing: int = 5,
     draw_equivalence_lines_to_axis: bool = True,
+    interpretation_note: str | None = None,
 ) -> plt.Axes:
     """Plot a critical difference diagram."""
     if ax is None:
@@ -166,7 +213,7 @@ def _plot_cdd_diagram(
     # Clip axes
     min_bar_y = ruler_y - 0.4 - max_bar_pos * bar_y_spacing
     ax.set_xlim(0, n_models + 1)
-    ax.set_ylim(min_bar_y - 0.3, 2.5)
+    ax.set_ylim(min_bar_y - (0.45 if interpretation_note else 0.3), 2.5)
     ax.axis("off")
 
     # Legend
@@ -177,6 +224,15 @@ def _plot_cdd_diagram(
         fontsize=8,
         style="italic",
     )
+
+    # Reading rule behind the equivalence bars
+    if interpretation_note:
+        ax.text(
+            0.5,
+            min_bar_y - 0.27,
+            interpretation_note,
+            fontsize=7,
+        )
 
     return ax
 
@@ -189,6 +245,7 @@ def plot_cdd_diagram(
     bar_y_spacing: float = 0.12,
     xlabel_spacing: int = 5,
     draw_equivalence_lines_to_axis: bool = True,
+    interpretation_note: str | None = None,
 ) -> plt.Axes:
     """Plot a critical difference diagram.
 
@@ -211,6 +268,10 @@ def plot_cdd_diagram(
         Whether to draw equivalence lines to extend equivalence bars up to the axis.
         If False, equivalence bars will not have vertical lines connecting them to
         the axis. Default is True.
+    interpretation_note : str | None, optional
+        Line drawn under the diagram spelling out the rule that joins models
+        with a bar. Defaults to :func:`describe_interpretation` applied to
+        ``interpretation_col``; pass ``""`` to draw nothing.
     """
     if ax is not None and not isinstance(ax, plt.Axes):
         raise ValueError("ax must be a matplotlib Axes object or None.")
@@ -229,4 +290,5 @@ def plot_cdd_diagram(
         bar_y_spacing=bar_y_spacing,
         xlabel_spacing=xlabel_spacing,
         draw_equivalence_lines_to_axis=draw_equivalence_lines_to_axis,
+        interpretation_note=interpretation_note,
     )
