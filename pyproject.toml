@@ -23,7 +23,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
     "pandas>=2.0.0",
-    "pymc",
+    "pymc<6.0.0",
     "scipy",
     "tqdm",
     "networkx",

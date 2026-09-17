@@ -178,7 +178,7 @@ requires-dist = [
     { name = "matplotlib" },
     { name = "networkx" },
     { name = "pandas", specifier = ">=2.0.0" },
-    { name = "pymc" },
+    { name = "pymc", specifier = "<6.0.0" },
     { name = "scipy" },
     { name = "tqdm" },
 ]
