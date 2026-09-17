@@ -382,6 +382,366 @@ class TestCriticalDifferenceOrientation:
         assert by_x == by_beta
 
 
+class TestStrongPosteriorPlot:
+    """``plot(kind="strong-posterior")`` draws one interval per comparison."""
+
+    @pytest.fixture(autouse=True)
+    def _agg_backend(self):
+        import matplotlib as mpl
+
+        mpl.use("Agg")
+        import matplotlib.pyplot as plt
+
+        yield
+        plt.close("all")
+
+    def test_selected_pairs_keep_their_order(self, fitted_model):
+        """Each pair is read as given, so a worse model on the left sits below 0.5."""
+        pairs = [("model_a", "model_b"), ("model_c", "model_a")]
+        ax = fitted_model.plot(
+            kind="strong-posterior", selected_pairs=pairs, orientation="vertical"
+        )
+        labels = [t.get_text() for t in ax.get_yticklabels()]
+        drawn = dict(zip(labels, ax.collections[-1].get_offsets()[:, 0], strict=False))
+        assert set(drawn) == {"model_a > model_b", "model_c > model_a"}
+
+        expected = fitted_model.pairwise_samples(pairs).mean()
+        for label, value in drawn.items():
+            assert value == pytest.approx(expected[label])
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {},
+            {"control_model": "model_a", "selected_pairs": [("model_b", "model_c")]},
+        ],
+        ids=["neither", "both"],
+    )
+    def test_requires_exactly_one_of_control_or_pairs(self, fitted_model, kwargs):
+        """Every pair of a large benchmark is unreadable, so it is not a default."""
+        with pytest.raises(ValueError, match="exactly one of control_model"):
+            fitted_model.plot(**kwargs)
+
+    def test_selected_models_needs_a_control(self, fitted_model):
+        """selected_models filters rows against a control, not a pair list."""
+        with pytest.raises(ValueError, match="selected_models only applies"):
+            fitted_model.plot(
+                selected_pairs=[("model_a", "model_b")],
+                selected_models=["model_a", "model_b"],
+            )
+
+    def test_unknown_pair_model_raises(self, fitted_model):
+        """A misspelled name in a pair fails loudly."""
+        with pytest.raises(ValueError, match="Unknown algorithms"):
+            fitted_model.plot(selected_pairs=[("model_a", "model_z")])
+
+    def test_control_orients_every_pair_against_it(self, fitted_model):
+        """With a control, rows are the other models at P(model > control)."""
+        ax = fitted_model.plot(
+            kind="strong-posterior", control_model="model_b", orientation="vertical"
+        )
+        labels = [t.get_text() for t in ax.get_yticklabels()]
+        drawn = dict(zip(labels, ax.collections[-1].get_offsets()[:, 0], strict=False))
+        assert set(drawn) == {"model_a", "model_c"}
+
+        expected = fitted_model.pairwise_samples(
+            [("model_a", "model_b"), ("model_c", "model_b")]
+        ).mean()
+        assert drawn["model_a"] == pytest.approx(expected["model_a > model_b"])
+        assert drawn["model_c"] == pytest.approx(expected["model_c > model_b"])
+        # Rows run from the lowest mean at the bottom to the highest at the top.
+        assert list(drawn.values()) == sorted(drawn.values())
+
+    def test_horizontal_is_the_default_best_on_the_left(self, fitted_model):
+        """By default comparisons run along the x axis, highest mean first."""
+        ax = fitted_model.plot(control_model="model_b")
+        labels = [t.get_text() for t in ax.get_xticklabels()]
+        assert set(labels) == {"model_a", "model_c"}
+
+        offsets = ax.collections[-1].get_offsets()
+        drawn = dict(zip(labels, offsets[:, 1], strict=False))
+        expected = fitted_model.pairwise_samples(
+            [("model_a", "model_b"), ("model_c", "model_b")]
+        ).mean()
+        assert drawn["model_a"] == pytest.approx(expected["model_a > model_b"])
+        assert list(offsets[:, 1]) == sorted(offsets[:, 1], reverse=True)
+
+    def test_unknown_orientation_raises(self, fitted_model):
+        """Orientation is validated like the other literal options."""
+        with pytest.raises(ValueError, match="Invalid value 'diagonal'"):
+            fitted_model.plot(control_model="model_a", orientation="diagonal")
+
+    @pytest.mark.parametrize("orientation", ["horizontal", "vertical"])
+    def test_control_model_is_named_in_a_subtitle(self, fitted_model, orientation):
+        """Labels drop the control, so the figure must say what they compare to."""
+        ax = fitted_model.plot(control_model="model_b", orientation=orientation)
+        assert "Control model: model_b" in [t.get_text() for t in ax.texts]
+
+    def test_selected_pairs_have_no_subtitle(self, fitted_model):
+        """Pair labels already name both models."""
+        ax = fitted_model.plot(selected_pairs=[("model_a", "model_b")])
+        assert not ax.texts
+
+    def test_draws_on_given_axes(self, fitted_model):
+        """A passed Axes is used, not replaced."""
+        import matplotlib.pyplot as plt
+
+        _, ax = plt.subplots()
+        assert fitted_model.plot(control_model="model_a", ax=ax) is ax
+
+    def test_plot_is_a_shorthand_for_the_dedicated_method(self, fitted_model):
+        """Both entry points draw the same values."""
+        via_plot = fitted_model.plot(control_model="model_b", hdi_prob=0.8)
+        direct = fitted_model.plot_strong_posterior(
+            control_model="model_b", hdi_prob=0.8
+        )
+        assert (
+            via_plot.collections[-1].get_offsets()
+            == direct.collections[-1].get_offsets()
+        ).all()
+
+    def test_dedicated_method_applies_selection_rules(self, fitted_model):
+        """The checks live in the shared helper, not only in ``plot``."""
+        with pytest.raises(ValueError, match="exactly one of control_model"):
+            fitted_model.plot_strong_posterior()
+
+    def test_unknown_kind_raises(self, fitted_model):
+        """Only the advertised kinds are accepted."""
+        with pytest.raises(ValueError, match="Invalid value 'density'"):
+            fitted_model.plot(kind="density", control_model="model_a")
+
+    def test_unknown_control_raises(self, fitted_model):
+        """A misspelled control fails loudly, as in ``posterior_table``."""
+        with pytest.raises(ValueError, match="Unknown control_model"):
+            fitted_model.plot(control_model="model_z")
+
+
+class TestStrongVerdicts:
+    """The strong rule is symmetric around 0.5."""
+
+    def test_thresholds(self):
+        """Means on and around each threshold get the expected verdict."""
+        from btk.tests.bbt.plots._strong_posterior import strong_verdicts
+
+        means = np.array([0.1, 0.3, 0.4, 0.45, 0.5, 0.55, 0.6, 0.7, 0.9])
+        assert strong_verdicts(means, 0.70, 0.55).tolist() == [
+            "weaker",
+            "no claim",
+            "no claim",
+            "equivalent",
+            "equivalent",
+            "equivalent",
+            "no claim",
+            "no claim",
+            "better",
+        ]
+
+
+class TestWeakPosteriorPlot:
+    """``plot(kind="weak-posterior")`` draws P(pi > 0.5) and P(pi in ROPE) in two panels."""
+
+    @pytest.fixture(autouse=True)
+    def _agg_backend(self):
+        import matplotlib as mpl
+
+        mpl.use("Agg")
+        import matplotlib.pyplot as plt
+
+        yield
+        plt.close("all")
+
+    @staticmethod
+    def _expected(fitted_model, pairs, rope):
+        draws = fitted_model.pairwise_samples(pairs)
+        above = (draws > 0.5).mean()
+        in_rope = ((draws >= rope[0]) & (draws <= rope[1])).mean()
+        return above, in_rope
+
+    def test_returns_two_axes(self, fitted_model):
+        """One panel per quantity."""
+        axes = fitted_model.plot(kind="weak-posterior", control_model="model_a")
+        assert len(axes) == 2
+
+    def test_control_orients_every_pair_against_it(self, fitted_model):
+        """Horizontal: models on x, P(pi > 0.5) on top, P(pi in ROPE) below."""
+        rope = (0.4, 0.6)
+        top, bottom = fitted_model.plot(
+            kind="weak-posterior", control_model="model_b", rope_value=rope
+        )
+        labels = [t.get_text() for t in bottom.get_xticklabels()]
+        assert set(labels) == {"model_a", "model_c"}
+
+        above, in_rope = self._expected(
+            fitted_model, [("model_a", "model_b"), ("model_c", "model_b")], rope
+        )
+        drawn_above = dict(
+            zip(labels, top.collections[-1].get_offsets()[:, 1], strict=False)
+        )
+        drawn_rope = dict(
+            zip(labels, bottom.collections[-1].get_offsets()[:, 1], strict=False)
+        )
+        for model in ("model_a", "model_c"):
+            key = f"{model} > model_b"
+            assert drawn_above[model] == pytest.approx(above[key])
+            assert drawn_rope[model] == pytest.approx(in_rope[key])
+
+    def test_best_first_by_posterior_mean(self, fitted_model):
+        """Horizontal runs best-left; vertical puts the best on top."""
+        means = fitted_model.pairwise_samples(
+            [("model_a", "model_b"), ("model_c", "model_b")]
+        ).mean()
+        best = means.idxmax().split(" > ")[0]
+
+        _, bottom = fitted_model.plot(kind="weak-posterior", control_model="model_b")
+        assert bottom.get_xticklabels()[0].get_text() == best
+
+        left, _ = fitted_model.plot(
+            kind="weak-posterior", control_model="model_b", orientation="vertical"
+        )
+        assert left.get_yticklabels()[-1].get_text() == best
+
+    def test_selected_pairs_keep_their_order(self, fitted_model):
+        """Vertical: pairs on y, both quantities on x, each pair read as given."""
+        pairs = [("model_a", "model_b"), ("model_c", "model_a")]
+        left, right = fitted_model.plot(
+            kind="weak-posterior", selected_pairs=pairs, orientation="vertical"
+        )
+        labels = [t.get_text() for t in left.get_yticklabels()]
+        assert set(labels) == {"model_a > model_b", "model_c > model_a"}
+
+        above, in_rope = self._expected(fitted_model, pairs, (0.45, 0.55))
+        drawn_above = dict(
+            zip(labels, left.collections[-1].get_offsets()[:, 0], strict=False)
+        )
+        drawn_rope = dict(
+            zip(labels, right.collections[-1].get_offsets()[:, 0], strict=False)
+        )
+        for label in labels:
+            assert drawn_above[label] == pytest.approx(above[label])
+            assert drawn_rope[label] == pytest.approx(in_rope[label])
+
+    def test_control_model_is_named_in_a_subtitle(self, fitted_model):
+        """Labels drop the control, so the figure must say what they compare to."""
+        top, _ = fitted_model.plot(kind="weak-posterior", control_model="model_b")
+        assert "Control model: model_b" in [t.get_text() for t in top.texts]
+
+    def test_draws_on_given_axes(self, fitted_model):
+        """Two passed Axes are used, not replaced."""
+        import matplotlib.pyplot as plt
+
+        _, given = plt.subplots(1, 2)
+        axes = fitted_model.plot(
+            kind="weak-posterior", control_model="model_a", ax=given
+        )
+        assert list(axes) == list(given)
+
+    @pytest.mark.parametrize("n_axes", [1, 3])
+    def test_wrong_number_of_axes_says_which_panel_goes_where(
+        self, fitted_model, n_axes
+    ):
+        """Two panels need two Axes, and the error names what each one holds."""
+        import matplotlib.pyplot as plt
+
+        _, given = plt.subplots(1, n_axes)
+        with pytest.raises(ValueError, match=r"ax\[0\] for P\(pi > 0.5\) and ax\[1\]"):
+            fitted_model.plot_weak_posterior(control_model="model_a", ax=given)
+
+    def test_unused_arguments_are_ignored(self, fitted_model):
+        """``plot`` takes every kind's options; each kind skips the ones it does not use."""
+        axes = fitted_model.plot(
+            kind="weak-posterior", control_model="model_a", hdi_prob=0.5
+        )
+        assert len(axes) == 2
+        ax = fitted_model.plot(
+            kind="strong-posterior", control_model="model_a", rope_value=(0.4, 0.6)
+        )
+        assert ax.get_title(loc="left").startswith("Strong interpretation")
+
+    def test_plot_is_a_shorthand_for_the_dedicated_method(self, fitted_model):
+        """Both entry points draw the same values."""
+        rope = (0.4, 0.6)
+        via_plot = fitted_model.plot(
+            kind="weak-posterior", control_model="model_b", rope_value=rope
+        )
+        direct = fitted_model.plot_weak_posterior(
+            control_model="model_b", rope_value=rope
+        )
+        for a, b in zip(via_plot, direct, strict=False):
+            assert (
+                a.collections[-1].get_offsets() == b.collections[-1].get_offsets()
+            ).all()
+
+    def test_requires_exactly_one_of_control_or_pairs(self, fitted_model):
+        """Shares the selection rules of the strong plot."""
+        with pytest.raises(ValueError, match="exactly one of control_model"):
+            fitted_model.plot(kind="weak-posterior")
+
+
+class TestWeakVerdicts:
+    """The weak rule checks equivalence first and is symmetric around 0.5."""
+
+    def test_thresholds(self):
+        """Equivalence wins over better, and P(pi < 0.5) gives weaker."""
+        from btk.tests.bbt.plots._weak_posterior import weak_verdicts
+
+        above_50 = np.array([0.99, 0.99, 0.01, 0.50, 0.94, 0.03])
+        below_50 = 1.0 - above_50
+        in_rope = np.array([0.00, 0.96, 0.00, 0.95, 0.10, 0.94])
+        assert weak_verdicts(above_50, below_50, in_rope, 0.95).tolist() == [
+            "better",
+            "equivalent",
+            "weaker",
+            "equivalent",
+            "no claim",
+            "weaker",
+        ]
+
+
+@pytest.mark.filterwarnings("ignore:No groups of equivalent algorithms")
+class TestCddViaPlot:
+    """``plot(kind="cdd")`` is a shorthand for ``plot_cdd_diagram``."""
+
+    @pytest.fixture(autouse=True)
+    def _agg_backend(self):
+        import matplotlib as mpl
+
+        mpl.use("Agg")
+        import matplotlib.pyplot as plt
+
+        yield
+        plt.close("all")
+
+    def test_draws_on_given_axes_without_a_control(self, fitted_model):
+        """The CDD ranks every model, so control and pair arguments are not required."""
+        import matplotlib.pyplot as plt
+
+        _, ax = plt.subplots()
+        assert fitted_model.plot(kind="cdd", ax=ax) is ax
+
+    def test_matches_dedicated_method(self, fitted_model):
+        """Same ROPE and interpretation give the same labels and lines."""
+        import matplotlib.pyplot as plt
+
+        _, (a, b) = plt.subplots(1, 2)
+        options = {"rope_value": (0.4, 0.6), "interpretation": "strong"}
+        fitted_model.plot(kind="cdd", ax=a, **options)
+        fitted_model.plot_cdd_diagram(ax=b, **options)
+        assert [t.get_text() for t in a.texts] == [t.get_text() for t in b.texts]
+        assert len(a.lines) == len(b.lines)
+
+    def test_ignores_posterior_plot_arguments(self, fitted_model):
+        """Arguments of the other kinds are ignored rather than rejected."""
+        ax = fitted_model.plot(
+            kind="cdd", control_model="model_a", hdi_prob=0.5, orientation="vertical"
+        )
+        assert ax is not None
+
+    def test_unknown_interpretation_raises(self, fitted_model):
+        """``interpretation`` is validated on the shorthand too."""
+        with pytest.raises(ValueError, match="Invalid value 'medium'"):
+            fitted_model.plot(kind="cdd", interpretation="medium")
+
+
 class TestBBTTestInitialization:
     """Test BBTTest initialization and parameter validation."""
 

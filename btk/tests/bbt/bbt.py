@@ -12,12 +12,14 @@ from ._types import (
     ALL_PROPERTIES_COLUMNS,
     HyperPriorType,
     InterpretationTypes,
+    PlotKindType,
+    PlotOrientationType,
     ReportedPropertyColumnType,
     TieSolverType,
 )
 from .alg import _construct_win_table, _get_pwin, _hdi
 from .model import _mcmcbbt_pymc
-from .plots import plot_cdd_diagram
+from .plots import plot_cdd_diagram, plot_strong_posterior, plot_weak_posterior
 
 
 class BBTTest(BaseBayesianTest):
@@ -701,6 +703,286 @@ class BBTTest(BaseBayesianTest):
         return pd.DataFrame.from_records(records)
 
     @_validate_params
+    def plot(
+        self,
+        kind: PlotKindType = "strong-posterior",
+        control_model: str | None = None,
+        selected_pairs: Sequence[tuple[str, str]] | None = None,
+        selected_models: Iterable[str] | None = None,
+        hdi_prob: float = 0.89,
+        rope_value: tuple[float, float] = (0.45, 0.55),
+        interpretation: InterpretationTypes = "weak",
+        orientation: PlotOrientationType = "horizontal",
+        ax: plt.Axes | Sequence[plt.Axes] | None = None,
+        **kwargs,
+    ) -> plt.Axes | np.ndarray:
+        """Plot the posterior of the fitted BBT model; shorthand for the ``plot_*`` methods.
+
+        Arguments the chosen ``kind`` does not use are ignored, so one call
+        signature serves every kind. See the dedicated methods for what each
+        figure shows and what its arguments mean.
+
+        Parameters
+        ----------
+        kind : str, optional
+            The figure to draw. Defaults to `strong-posterior`.
+
+                - `strong-posterior` - :meth:`plot_strong_posterior`; uses
+                  ``control_model`` or ``selected_pairs``, ``selected_models``,
+                  ``hdi_prob``, ``orientation`` and ``ax``.
+                - `weak-posterior` - :meth:`plot_weak_posterior`; uses
+                  ``control_model`` or ``selected_pairs``, ``selected_models``,
+                  ``rope_value``, ``orientation`` and ``ax``.
+                - `cdd` - :meth:`plot_cdd_diagram`; uses ``rope_value``,
+                  ``interpretation`` and ``ax``.
+
+        control_model : str | None, optional
+            Compare every other model against this one. Defaults to None.
+        selected_pairs : Sequence[tuple[str, str]] | None, optional
+            Pairs to draw, each read in the given order. Defaults to None.
+        selected_models : Iterable[str] | None, optional
+            With ``control_model``, the subset of models to compare against it.
+        hdi_prob : float, optional
+            Probability mass of the HDIs. Defaults to 0.89.
+        rope_value : tuple[float, float], optional
+            Region of Practical Equivalence (ROPE). Defaults to (0.45, 0.55).
+        interpretation : {"weak", "strong"}, optional
+            Reading rule that decides which models the CDD bars join. Defaults
+            to "weak".
+        orientation : str, optional
+            `horizontal` or `vertical`. Defaults to `horizontal`.
+        ax : plt.Axes | Sequence[plt.Axes] | None, optional
+            One Axes for `strong-posterior` and `cdd`, two for `weak-posterior`.
+            If None, a new figure is created.
+        **kwargs
+            Additional keyword arguments passed to the underlying plotting function.
+
+        Returns
+        -------
+        plt.Axes | np.ndarray
+            A single Axes for `strong-posterior` and `cdd`, an array of two for
+            `weak-posterior`.
+
+        See Also
+        --------
+        plot_strong_posterior : Posterior mean and HDI under the strong interpretation.
+        plot_weak_posterior : P(pi > 0.5) and P(pi in ROPE) under the weak interpretation.
+        plot_cdd_diagram : Critical difference diagram of the whole ranking.
+        """
+        if kind == "cdd":
+            return self.plot_cdd_diagram(
+                rope_value=rope_value, interpretation=interpretation, ax=ax, **kwargs
+            )
+        selection = {
+            "control_model": control_model,
+            "selected_pairs": selected_pairs,
+            "selected_models": selected_models,
+            "orientation": orientation,
+            "ax": ax,
+        }
+        if kind == "strong-posterior":
+            return self.plot_strong_posterior(**selection, hdi_prob=hdi_prob, **kwargs)
+        if kind == "weak-posterior":
+            return self.plot_weak_posterior(
+                **selection, rope_value=rope_value, **kwargs
+            )
+        raise ValueError(f"Unsupported plot kind {kind!r}.")
+
+    @_validate_params
+    def plot_strong_posterior(
+        self,
+        control_model: str | None = None,
+        selected_pairs: Sequence[tuple[str, str]] | None = None,
+        selected_models: Iterable[str] | None = None,
+        hdi_prob: float = 0.89,
+        orientation: PlotOrientationType = "horizontal",
+        ax: plt.Axes | None = None,
+        **kwargs,
+    ) -> plt.Axes:
+        r"""Plot each pairwise probability under the strong interpretation.
+
+        Draws the posterior mean of :math:`\pi` with its HDI for each comparison,
+        coloured by the strong interpretation (Wainer 2023, sec. 8.3): `better`
+        if :math:`E[\pi] > 0.70`, `equivalent` if :math:`0.45 \leq E[\pi] \leq 0.55`,
+        `weaker` if :math:`E[\pi] < 0.30`, `no claim` otherwise. Shaded regions
+        mark the three claims.
+
+        Exactly one of ``control_model`` or ``selected_pairs`` must be given: with
+        many models the full set of pairs is too large to read.
+
+        Parameters
+        ----------
+        control_model : str | None, optional
+            Compare every other model against this one, each read as
+            ``P(model > control_model)``. Defaults to None.
+        selected_pairs : Sequence[tuple[str, str]] | None, optional
+            Pairs to draw, each read in the given order, so ``("a", "b")`` is
+            ``P(a > b)``. Defaults to None.
+        selected_models : Iterable[str] | None, optional
+            With ``control_model``, the subset of models to compare against it.
+            Defaults to all fitted models.
+        hdi_prob : float, optional
+            Probability mass of the HDIs. Defaults to 0.89.
+        orientation : str, optional
+            `horizontal` lays the comparisons along the x axis, best on the left;
+            `vertical` lays them along the y axis, best on top. Defaults to
+            `horizontal`.
+        ax : plt.Axes | None, optional
+            Matplotlib Axes to plot on. If None, a new figure and axes will be created.
+        **kwargs
+            Additional keyword arguments passed to the ``scatter`` call of the means.
+
+        Returns
+        -------
+        plt.Axes
+            The Axes the figure was drawn on.
+
+        See Also
+        --------
+        plot_weak_posterior : The same comparisons under the weak interpretation.
+        """
+        samples, labels, value_label, subtitle = self._plot_samples(
+            control_model, selected_pairs, selected_models
+        )
+        hdi_values = _hdi(samples, hdi_prob)
+        return plot_strong_posterior(
+            labels=labels,
+            means=samples.mean(axis=0),
+            hdi_low=hdi_values[0],
+            hdi_high=hdi_values[1],
+            better_threshold=self._STRONG_INTERPRETATION_BETTER_THRESHOLD,
+            equal_threshold=self._STRONG_INTERPRETATION_EQUAL_THRESHOLD,
+            hdi_prob=hdi_prob,
+            value_label=value_label,
+            orientation=orientation,
+            subtitle=subtitle,
+            ax=ax,
+            **kwargs,
+        )
+
+    @_validate_params
+    def plot_weak_posterior(
+        self,
+        control_model: str | None = None,
+        selected_pairs: Sequence[tuple[str, str]] | None = None,
+        selected_models: Iterable[str] | None = None,
+        rope_value: tuple[float, float] = (0.45, 0.55),
+        orientation: PlotOrientationType = "horizontal",
+        ax: Sequence[plt.Axes] | None = None,
+        **kwargs,
+    ) -> np.ndarray:
+        r"""Plot each pairwise probability under the weak interpretation.
+
+        Draws two panels per comparison: :math:`P(\pi > 0.5)` and
+        :math:`P(\pi \in \mathrm{ROPE})`, coloured by the weak interpretation
+        (Wainer 2023, sec. 8.2): `equivalent` if
+        :math:`P(\pi \in \mathrm{ROPE}) \geq 0.95`, otherwise `better` if
+        :math:`P(\pi > 0.5) \geq 0.95`, `weaker` if :math:`P(\pi < 0.5) \geq 0.95`,
+        `no claim` otherwise. Comparisons are ordered by :math:`E[\pi]`.
+
+        Exactly one of ``control_model`` or ``selected_pairs`` must be given: with
+        many models the full set of pairs is too large to read.
+
+        Parameters
+        ----------
+        control_model : str | None, optional
+            Compare every other model against this one, each read as
+            ``P(model > control_model)``. Defaults to None.
+        selected_pairs : Sequence[tuple[str, str]] | None, optional
+            Pairs to draw, each read in the given order, so ``("a", "b")`` is
+            ``P(a > b)``. Defaults to None.
+        selected_models : Iterable[str] | None, optional
+            With ``control_model``, the subset of models to compare against it.
+            Defaults to all fitted models.
+        rope_value : tuple[float, float], optional
+            Region of Practical Equivalence (ROPE). Defaults to (0.45, 0.55).
+        orientation : str, optional
+            `horizontal` stacks the panels and lays the comparisons along the
+            x axis, best on the left; `vertical` puts the panels side by side
+            and lays the comparisons along the y axis, best on top. Defaults to
+            `horizontal`.
+        ax : Sequence[plt.Axes] | None, optional
+            Exactly two Axes: ``ax[0]`` for :math:`P(\pi > 0.5)`, ``ax[1]`` for
+            :math:`P(\pi \in \mathrm{ROPE})`. If None, a new figure is created.
+        **kwargs
+            Additional keyword arguments passed to both ``scatter`` calls.
+
+        Returns
+        -------
+        np.ndarray
+            The two Axes drawn on, in the order described for ``ax``.
+
+        See Also
+        --------
+        plot_strong_posterior : The same comparisons under the strong interpretation.
+        """
+        samples, labels, value_label, subtitle = self._plot_samples(
+            control_model, selected_pairs, selected_models
+        )
+        return plot_weak_posterior(
+            labels=labels,
+            means=samples.mean(axis=0),
+            above_50=np.mean(samples > 0.5, axis=0),
+            below_50=np.mean(samples < 0.5, axis=0),
+            in_rope=np.mean(
+                (samples >= rope_value[0]) & (samples <= rope_value[1]), axis=0
+            ),
+            threshold=self._WEAK_INTERPRETATION_THRESHOLD,
+            rope_value=rope_value,
+            value_label=value_label,
+            orientation=orientation,
+            subtitle=subtitle,
+            ax=ax,
+            **kwargs,
+        )
+
+    def _plot_samples(
+        self,
+        control_model: str | None,
+        selected_pairs: Sequence[tuple[str, str]] | None,
+        selected_models: Iterable[str] | None,
+    ) -> tuple[np.ndarray, list[str], str, str | None]:
+        """Posterior draws of ``pi`` per plotted comparison, with labels.
+
+        Returns the ``(draws, comparisons)`` sample matrix, one label per
+        comparison, the axis label defining ``pi`` and an optional subtitle.
+        """
+        self._check_if_fitted()
+        if (control_model is None) == (selected_pairs is None):
+            raise ValueError("Pass exactly one of control_model or selected_pairs.")
+        if selected_pairs is not None and selected_models is not None:
+            raise ValueError(
+                "selected_models only applies with control_model; "
+                "list the pairs in selected_pairs instead."
+            )
+        if selected_pairs is not None:
+            pairs = list(selected_pairs)
+            if not pairs:
+                raise ValueError("selected_pairs must contain at least one pair.")
+            draws = self.pairwise_samples(pairs)
+            value_label = r"$\pi = P(\mathrm{left} \succ \mathrm{right})$"
+            return draws.to_numpy(), list(draws.columns), value_label, None
+
+        samples, names = _get_pwin(
+            bbt_result=self._fit_posterior,
+            alg_names=self._algorithms,
+            control=control_model,
+            selected=list(selected_models) if selected_models is not None else None,
+        )
+        # ``_get_pwin`` puts the better model on the left; re-orient every pair
+        # as ``other > control`` so the control is the fixed reference.
+        labels = []
+        for k, name in enumerate(names):
+            left, right = (part.strip() for part in name.split(">"))
+            if left == control_model:
+                samples[:, k] = 1.0 - samples[:, k]
+                left = right
+            labels.append(left)
+        value_label = rf"$\pi = P(\mathrm{{model}} \succ$ {control_model}$)$"
+        # Rows are named by the model alone, so say what they are compared to.
+        return samples, labels, value_label, f"Control model: {control_model}"
+
+    @_validate_params
     def plot_cdd_diagram(
         self,
         rope_value: tuple[float, float] = (0.45, 0.55),
@@ -708,7 +990,37 @@ class BBTTest(BaseBayesianTest):
         ax: plt.Axes | None = None,
         **kwargs,
     ) -> plt.Axes:
-        """Plot critical difference diagram for the fitted BBT model."""
+        r"""Plot a critical difference diagram for the fitted BBT model.
+
+        Models are placed on a ruler by their rank in mean :math:`\beta`, best at
+        the "better" end. A bar spans each maximal group of models that the chosen
+        reading rule calls pairwise equivalent. Models not joined by a bar are
+        not claimed equivalent, which is not the same as claimed different.
+
+        Parameters
+        ----------
+        rope_value : tuple[float, float], optional
+            Region of Practical Equivalence (ROPE). Defaults to (0.45, 0.55).
+        interpretation : {"weak", "strong"}, optional
+            Reading rule applied to every pair, see :meth:`posterior_table`.
+            Defaults to "weak".
+        ax : plt.Axes | None, optional
+            Matplotlib Axes to plot on. If None, a new figure and axes will be created.
+        **kwargs
+            Additional keyword arguments passed to the underlying plotting
+            function: ``bar_y_spacing``, ``xlabel_spacing`` and
+            ``draw_equivalence_lines_to_axis``.
+
+        Returns
+        -------
+        plt.Axes
+            The Axes the figure was drawn on.
+
+        See Also
+        --------
+        plot_strong_posterior : Pairwise posteriors against a control, strong reading.
+        plot_weak_posterior : Pairwise posteriors against a control, weak reading.
+        """
         self._check_if_fitted()
         posterior_df = self.posterior_table(
             rope_value=rope_value,

@@ -24,6 +24,10 @@ ReportedPropertyColumnType = Literal[
     "strong_interpretation_raw",
 ]
 
+# Figures dispatched through ``BBTTest.plot(kind=...)``.
+PlotKindType = Literal["strong-posterior", "weak-posterior", "cdd"]
+PlotOrientationType = Literal["horizontal", "vertical"]
+
 InterpretationTypes = Literal[
     "weak",
     "strong",
