@@ -697,6 +697,51 @@ class TestWeakVerdicts:
         ]
 
 
+@pytest.mark.filterwarnings("ignore:No groups of equivalent algorithms")
+class TestCddViaPlot:
+    """``plot(kind="cdd")`` is a shorthand for ``plot_cdd_diagram``."""
+
+    @pytest.fixture(autouse=True)
+    def _agg_backend(self):
+        import matplotlib as mpl
+
+        mpl.use("Agg")
+        import matplotlib.pyplot as plt
+
+        yield
+        plt.close("all")
+
+    def test_draws_on_given_axes_without_a_control(self, fitted_model):
+        """The CDD ranks every model, so control and pair arguments are not required."""
+        import matplotlib.pyplot as plt
+
+        _, ax = plt.subplots()
+        assert fitted_model.plot(kind="cdd", ax=ax) is ax
+
+    def test_matches_dedicated_method(self, fitted_model):
+        """Same ROPE and interpretation give the same labels and lines."""
+        import matplotlib.pyplot as plt
+
+        _, (a, b) = plt.subplots(1, 2)
+        options = {"rope_value": (0.4, 0.6), "interpretation": "strong"}
+        fitted_model.plot(kind="cdd", ax=a, **options)
+        fitted_model.plot_cdd_diagram(ax=b, **options)
+        assert [t.get_text() for t in a.texts] == [t.get_text() for t in b.texts]
+        assert len(a.lines) == len(b.lines)
+
+    def test_ignores_posterior_plot_arguments(self, fitted_model):
+        """Arguments of the other kinds are ignored rather than rejected."""
+        ax = fitted_model.plot(
+            kind="cdd", control_model="model_a", hdi_prob=0.5, orientation="vertical"
+        )
+        assert ax is not None
+
+    def test_unknown_interpretation_raises(self, fitted_model):
+        """``interpretation`` is validated on the shorthand too."""
+        with pytest.raises(ValueError, match="Invalid value 'medium'"):
+            fitted_model.plot(kind="cdd", interpretation="medium")
+
+
 class TestBBTTestInitialization:
     """Test BBTTest initialization and parameter validation."""
 

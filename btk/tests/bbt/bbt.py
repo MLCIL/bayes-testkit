@@ -711,6 +711,7 @@ class BBTTest(BaseBayesianTest):
         selected_models: Iterable[str] | None = None,
         hdi_prob: float = 0.89,
         rope_value: tuple[float, float] = (0.45, 0.55),
+        interpretation: InterpretationTypes = "weak",
         orientation: PlotOrientationType = "horizontal",
         ax: plt.Axes | Sequence[plt.Axes] | None = None,
         **kwargs,
@@ -727,9 +728,13 @@ class BBTTest(BaseBayesianTest):
             The figure to draw. Defaults to `strong-posterior`.
 
                 - `strong-posterior` - :meth:`plot_strong_posterior`; uses
-                  ``hdi_prob``, ignores ``rope_value``.
+                  ``control_model`` or ``selected_pairs``, ``selected_models``,
+                  ``hdi_prob``, ``orientation`` and ``ax``.
                 - `weak-posterior` - :meth:`plot_weak_posterior`; uses
-                  ``rope_value``, ignores ``hdi_prob``.
+                  ``control_model`` or ``selected_pairs``, ``selected_models``,
+                  ``rope_value``, ``orientation`` and ``ax``.
+                - `cdd` - :meth:`plot_cdd_diagram`; uses ``rope_value``,
+                  ``interpretation`` and ``ax``.
 
         control_model : str | None, optional
             Compare every other model against this one. Defaults to None.
@@ -741,24 +746,33 @@ class BBTTest(BaseBayesianTest):
             Probability mass of the HDIs. Defaults to 0.89.
         rope_value : tuple[float, float], optional
             Region of Practical Equivalence (ROPE). Defaults to (0.45, 0.55).
+        interpretation : {"weak", "strong"}, optional
+            Reading rule that decides which models the CDD bars join. Defaults
+            to "weak".
         orientation : str, optional
             `horizontal` or `vertical`. Defaults to `horizontal`.
         ax : plt.Axes | Sequence[plt.Axes] | None, optional
-            One Axes for `strong-posterior`, two for `weak-posterior`. If None,
-            a new figure is created.
+            One Axes for `strong-posterior` and `cdd`, two for `weak-posterior`.
+            If None, a new figure is created.
         **kwargs
             Additional keyword arguments passed to the underlying plotting function.
 
         Returns
         -------
         plt.Axes | np.ndarray
-            A single Axes for `strong-posterior`, an array of two for `weak-posterior`.
+            A single Axes for `strong-posterior` and `cdd`, an array of two for
+            `weak-posterior`.
 
         See Also
         --------
         plot_strong_posterior : Posterior mean and HDI under the strong interpretation.
         plot_weak_posterior : P(pi > 0.5) and P(pi in ROPE) under the weak interpretation.
+        plot_cdd_diagram : Critical difference diagram of the whole ranking.
         """
+        if kind == "cdd":
+            return self.plot_cdd_diagram(
+                rope_value=rope_value, interpretation=interpretation, ax=ax, **kwargs
+            )
         selection = {
             "control_model": control_model,
             "selected_pairs": selected_pairs,
@@ -976,7 +990,37 @@ class BBTTest(BaseBayesianTest):
         ax: plt.Axes | None = None,
         **kwargs,
     ) -> plt.Axes:
-        """Plot critical difference diagram for the fitted BBT model."""
+        r"""Plot a critical difference diagram for the fitted BBT model.
+
+        Models are placed on a ruler by their rank in mean :math:`\beta`, best at
+        the "better" end. A bar spans each maximal group of models that the chosen
+        reading rule calls pairwise equivalent. Models not joined by a bar are
+        not claimed equivalent, which is not the same as claimed different.
+
+        Parameters
+        ----------
+        rope_value : tuple[float, float], optional
+            Region of Practical Equivalence (ROPE). Defaults to (0.45, 0.55).
+        interpretation : {"weak", "strong"}, optional
+            Reading rule applied to every pair, see :meth:`posterior_table`.
+            Defaults to "weak".
+        ax : plt.Axes | None, optional
+            Matplotlib Axes to plot on. If None, a new figure and axes will be created.
+        **kwargs
+            Additional keyword arguments passed to the underlying plotting
+            function: ``bar_y_spacing``, ``xlabel_spacing`` and
+            ``draw_equivalence_lines_to_axis``.
+
+        Returns
+        -------
+        plt.Axes
+            The Axes the figure was drawn on.
+
+        See Also
+        --------
+        plot_strong_posterior : Pairwise posteriors against a control, strong reading.
+        plot_weak_posterior : Pairwise posteriors against a control, weak reading.
+        """
         self._check_if_fitted()
         posterior_df = self.posterior_table(
             rope_value=rope_value,
