@@ -19,7 +19,12 @@ from ._types import (
 )
 from .alg import _construct_win_table, _get_pwin, _hdi
 from .model import _mcmcbbt_pymc
-from .plots import plot_cdd_diagram, plot_strong_posterior, plot_weak_posterior
+from .plots import (
+    describe_interpretation,
+    plot_cdd_diagram,
+    plot_strong_posterior,
+    plot_weak_posterior,
+)
 
 
 class BBTTest(BaseBayesianTest):
@@ -1008,8 +1013,10 @@ class BBTTest(BaseBayesianTest):
             Matplotlib Axes to plot on. If None, a new figure and axes will be created.
         **kwargs
             Additional keyword arguments passed to the underlying plotting
-            function: ``bar_y_spacing``, ``xlabel_spacing`` and
-            ``draw_equivalence_lines_to_axis``.
+            function: ``bar_y_spacing``, ``xlabel_spacing``,
+            ``draw_equivalence_lines_to_axis`` and ``interpretation_note``.
+            The note under the diagram spells out the reading rule that joins
+            models with a bar; pass ``interpretation_note=""`` to drop it.
 
         Returns
         -------
@@ -1021,6 +1028,15 @@ class BBTTest(BaseBayesianTest):
         plot_strong_posterior : Pairwise posteriors against a control, strong reading.
         plot_weak_posterior : Pairwise posteriors against a control, weak reading.
         """
+        interpretation_col = self._get_interpretation_columns(interpretation)
+        if "interpretation_note" not in kwargs:
+            kwargs["interpretation_note"] = describe_interpretation(
+                interpretation_col,
+                rope_value=rope_value,
+                weak_threshold=self._WEAK_INTERPRETATION_THRESHOLD,
+                equal_threshold=self._STRONG_INTERPRETATION_EQUAL_THRESHOLD,
+            )
+
         self._check_if_fitted()
         posterior_df = self.posterior_table(
             rope_value=rope_value,
@@ -1032,7 +1048,6 @@ class BBTTest(BaseBayesianTest):
             ),
             round_ndigits=None,
         )
-        interpretation_col = self._get_interpretation_columns(interpretation)
         # ``pos`` is the aggregated rank: 1 is the best algorithm, i.e. the
         # highest mean beta. ``_plot_cdd_diagram`` draws ``pos = 1`` at the
         # "better" end of the ruler, so the sort must be descending.
