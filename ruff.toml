@@ -1,6 +1,6 @@
 include = [
     "pyproject.toml",
-    "bbttest/**"
+    "btk/**"
 ]
 exclude = [
     "docs/**"

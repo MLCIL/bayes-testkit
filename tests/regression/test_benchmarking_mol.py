@@ -34,7 +34,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from bbttest import BBTTest
+from btk import BBTTest
 
 
 @pytest.fixture(scope="module")

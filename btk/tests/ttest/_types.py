@@ -2,7 +2,7 @@
 
 Following the scikit-learn style, categorical hyperparameters are typed as plain
 ``str`` and validated explicitly against these option tuples (via
-``bbttest.tests.common.validate_string``) rather than encoded as ``Literal``
+``btk.tests.common.validate_string``) rather than encoded as ``Literal``
 types.
 """
 

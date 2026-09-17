@@ -1,7 +1,7 @@
 """Shared lifecycle contract for the Bayesian test estimators.
 
 This formalises the conventions established by
-:class:`~bbttest.tests.bbt.bbt.BBTTest` so that every estimator -- BBT and its
+:class:`~btk.tests.bbt.bbt.BBTTest` so that every estimator -- BBT and its
 t-test siblings alike -- inherits the same outer shape: hyperparameters live in
 ``__init__``, ``fit`` returns ``self`` and sets the fitted flag, report methods
 are guarded by ``_check_if_fitted`` and read off a stored

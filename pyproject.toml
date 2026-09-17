@@ -1,5 +1,5 @@
 [project]
-name = "bbt-test"
+name = "bayes-testkit"
 version = "0.0.0" # version set dynamically in GitHub Actions from Git tags
 description = "Bayesian Bradley-Terry model implementation in PyMC"
 authors = [{ name = "AGH ML & Cheminformatics Lab", email = "praski@agh.edu.pl" }]
@@ -62,7 +62,7 @@ disable_error_code = ["import-untyped"]
 no_site_packages = true
 
 [tool.uv.build-backend]
-module-name = "bbttest"
+module-name = "btk"
 module-root = ""
 
 [build-system]

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bbttest import HierarchicalTTest
+from btk import HierarchicalTTest
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:HierarchicalTTest sampling diagnostics:UserWarning"

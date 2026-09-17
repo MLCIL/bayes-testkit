@@ -32,9 +32,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bbttest import BBTTest
-from bbttest.tests.bbt.alg import _construct_win_table
-from bbttest.tests.bbt.model import _mcmcbbt_pymc
+from btk import BBTTest
+from btk.tests.bbt.alg import _construct_win_table
+from btk.tests.bbt.model import _mcmcbbt_pymc
 
 ALGORITHMS = ["dt", "lda", "lgbm", "xgb", "svm"]
 

@@ -1,4 +1,4 @@
-"""BBT model implementation for bbttest.tests."""
+"""BBT model implementation for btk.tests."""
 
 from .bbt import BBTTest
 

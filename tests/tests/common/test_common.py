@@ -1,7 +1,7 @@
 """
 Unit tests for the shared estimator infrastructure.
 
-This module contains unit tests for the components in ``bbttest.tests.common``
+This module contains unit tests for the components in ``btk.tests.common``
 shared by every test estimator: string parameter validation, the highest density
 interval helper, and the ``BaseBayesianTest`` lifecycle contract.
 """
@@ -9,7 +9,7 @@ interval helper, and the ``BaseBayesianTest`` lifecycle contract.
 import numpy as np
 import pytest
 
-from bbttest.tests.common import (
+from btk.tests.common import (
     BaseBayesianTest,
     hdi_from_samples,
     validate_string,

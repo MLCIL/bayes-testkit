@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pymc as pm
 
-from bbttest.tests.common import BaseBayesianTest, _validate_params, hdi_from_samples
+from btk.tests.common import BaseBayesianTest, _validate_params, hdi_from_samples
 
 from ._types import (
     ALL_PROPERTIES_COLUMNS,
@@ -107,7 +107,7 @@ class BBTTest(BaseBayesianTest):
     Examples
     --------
     >>> import pandas as pd
-    >>> from bbttest import BBTTest
+    >>> from btk import BBTTest
     >>> data = pd.DataFrame({
     ...     'dataset': ['ds1', 'ds2', 'ds3'],
     ...     'model_a': [0.8, 0.75, 0.9],

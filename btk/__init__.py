@@ -1,4 +1,4 @@
-"""bbt-test: Bayesian model comparison tests for machine learning experiments."""
+"""Bayes Test Kit: Bayesian model comparison tests for machine learning experiments."""
 
 from .tests import BBTTest, CorrelatedTTest, HierarchicalTTest
 

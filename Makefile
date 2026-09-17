@@ -21,7 +21,7 @@ test-all:
 	uv run pytest tests
 
 test-coverage:  ## Run tests and calculate test coverage
-	uv run pytest --cov=bbttest tests
+	uv run pytest --cov=btk tests
 
 ruff-fix:
 	uv run ruff check --fix
