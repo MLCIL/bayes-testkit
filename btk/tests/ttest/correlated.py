@@ -1,4 +1,4 @@
-"""Bayesian correlated t-test implementation for bbttest.tests.ttest."""
+"""Bayesian correlated t-test implementation for btk.tests.ttest."""
 
 from collections.abc import Iterable, Sequence
 
@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from bbttest.tests.common import BaseBayesianTest, validate_string
+from btk.tests.common import BaseBayesianTest, validate_string
 
 from ._stats import (
     SummaryResult,
@@ -74,7 +74,7 @@ class CorrelatedTTest(BaseBayesianTest):
     Examples
     --------
     >>> import pandas as pd
-    >>> from bbttest import CorrelatedTTest
+    >>> from btk import CorrelatedTTest
     >>> data = pd.DataFrame({
     ...     'fold': [1, 2, 3, 1, 2, 3],
     ...     'model_a': [0.81, 0.83, 0.80, 0.82, 0.84, 0.81],
@@ -211,8 +211,8 @@ class CorrelatedTTest(BaseBayesianTest):
             Always. The posterior is a Student distribution in closed form, and the
             draws in :attr:`idata_` are independent draws from it rather than a Markov
             chain, so R-hat, effective sample size and divergences have no meaning
-            here. The sampled tests -- :class:`~bbttest.HierarchicalTTest` and
-            :class:`~bbttest.BBTTest` -- implement them.
+            here. The sampled tests -- :class:`~btk.HierarchicalTTest` and
+            :class:`~btk.BBTTest` -- implement them.
         """
         raise NotImplementedError(
             "CorrelatedTTest has a closed-form posterior, so there is no sampler to "

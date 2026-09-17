@@ -5,7 +5,7 @@ repos:
       # and have all dependencies
       - id: mypy
         name: mypy
-        entry: uv run mypy --package bbttest
+        entry: uv run mypy --package btk
         language: system
         pass_filenames: false
 

@@ -1,22 +1,22 @@
-# bbt-test
+# Bayes Test Kit
 
 ---
 
-BBT-Test is a Python package for Bayesian Bradley-Terry model along with utilities for multi-algorithm multi-dataset statistical evaluation. It also ships the two Bayesian t-tests of Benavoli et al. (2017) for comparing **two** algorithms: the correlated t-test (one dataset) and the hierarchical correlated t-test (many datasets).
+Bayes Test Kit is a Python package for Bayesian Bradley-Terry model along with utilities for multi-algorithm multi-dataset statistical evaluation. It also ships the two Bayesian t-tests of Benavoli et al. (2017) for comparing **two** algorithms: the correlated t-test (one dataset) and the hierarchical correlated t-test (many datasets).
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quickstart](#quickstart)
-- [Comparing two algorithms: the t-tests](#comparing-two-algorithms-the-t-tests)
+- [Bayesian t-tests](#bayesian-t-tests)
 - [License](#license)
 
 ## Installation
 
-You can install bbt-test via pip:
+You can install Bayes Test Kit via pip:
 
 ```bash
-pip install bbt-test
+pip install bayes-testkit
 ```
 
 If needed, you can also install the latest development version directly from GitHub:
@@ -27,7 +27,7 @@ pip install git+https://github.com/scikit-fingerprints/bbt-test
 
 ## Quickstart
 
-To generate results from BBT model you need to first fit posterior MCMC samples. BBT-Test supports unpaired (1 metric readout per algorithm per dataset) and paired (multiple metric readouts per algorithm per dataset) data.
+To generate results from BBT model you need to first fit posterior MCMC samples. Bayes Test Kit supports unpaired (1 metric readout per algorithm per dataset) and paired (multiple metric readouts per algorithm per dataset) data.
 
 For hands-on example of using the package, check out our example notebook: [01_simple_bbt_comparison.ipynb](examples/01_simple_bbt_comparison.ipynb).
 
@@ -49,7 +49,7 @@ df = pd.DataFrame({
 To generate data for BBT model, fit the `BBTTest` model with the dataframe
 
 ```python
-from bbttest import BBTTest
+from btk import BBTTest
 
 model = BBTTest(
     absolute_tie_threshold=0.01, # What counts as a tie, in the units of your metric.
@@ -85,7 +85,7 @@ BBTTest model supports two variants of input data for paired case, either a sing
 
 ```python
 import pandas as pd
-from bbttest import BBTTest
+from btk import BBTTest
 
 df = pd.DataFrame({
     "dataset": ["ds1", "ds1", "ds1", "ds2", "ds2", "ds2", "ds3", "ds3", "ds3"],
@@ -140,6 +140,42 @@ rope_value better_models equivalent_models worse_models unknown_models
 1  (0.45, 0.55)                                                  alg3, alg1
 2  (0.48, 0.52)                                                  alg3, alg1
 ```
+
+## Bayesian t-tests
+
+For comparing **two** algorithms, use `CorrelatedTTest` on the cross-validation folds of a single dataset:
+
+```python
+import pandas as pd
+from btk import CorrelatedTTest
+
+df = pd.DataFrame({
+    "fold": [1, 2, 3, 4, 5],
+    "alg1": [0.81, 0.83, 0.80, 0.82, 0.84],
+    "alg2": [0.78, 0.77, 0.79, 0.76, 0.78],
+})
+
+model = CorrelatedTTest(rope=0.01).fit(df, fold_col="fold")
+model.decision_table()
+```
+
+and `HierarchicalTTest` when the folds come from many datasets:
+
+```python
+from btk import HierarchicalTTest
+
+df = pd.DataFrame({
+    "dataset": ["ds1"] * 3 + ["ds2"] * 3 + ["ds3"] * 3,
+    "fold": [1, 2, 3] * 3,
+    "alg1": [0.81, 0.83, 0.80, 0.75, 0.77, 0.74, 0.90, 0.91, 0.89],
+    "alg2": [0.78, 0.77, 0.79, 0.76, 0.75, 0.73, 0.85, 0.86, 0.84],
+})
+
+model = HierarchicalTTest(rope=0.01).fit(df, dataset_col="dataset", fold_col="fold")
+model.decision_table()
+```
+
+Unlike BBT, `rope` here is a difference in the units of your metric.
 
 ## License
 

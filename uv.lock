@@ -144,7 +144,7 @@ wheels = [
 ]
 
 [[package]]
-name = "bbt-test"
+name = "bayes-testkit"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [

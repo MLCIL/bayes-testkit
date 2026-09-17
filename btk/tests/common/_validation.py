@@ -6,7 +6,7 @@ Two styles live here side by side:
   estimators, which type their categorical hyperparameters as plain ``str`` and
   validate the value explicitly against an allowed set;
 - ``_validate_params`` -- the annotation-driven decorator used by
-  :class:`~bbttest.tests.bbt.bbt.BBTTest`, kept here so both packages share a
+  :class:`~btk.tests.bbt.bbt.BBTTest`, kept here so both packages share a
   single validation module rather than reaching across into each other.
 """
 

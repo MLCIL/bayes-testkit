@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bbttest import CorrelatedTTest
+from btk import CorrelatedTTest
 
 
 @pytest.fixture

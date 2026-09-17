@@ -2,7 +2,7 @@ from typing import Literal
 
 import pytest
 
-from bbttest.tests.common import _validate_params
+from btk.tests.common import _validate_params
 
 MockLiteralType = Literal["option1", "option2", "option3"]
 

@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
-from bbttest.tests.bbt.plots._critical_difference import (
+from btk.tests.bbt.plots._critical_difference import (
     _plot_cdd_diagram,
     assign_bar_position,
     get_bars_for_cdd,

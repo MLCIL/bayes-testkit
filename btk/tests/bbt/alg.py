@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from bbttest.tests.common import hdi_from_samples
+from btk.tests.common import hdi_from_samples
 
 ALG1_COL = 2
 ALG2_COL = 3

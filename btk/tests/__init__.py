@@ -1,4 +1,4 @@
-"""Tests package exports for bbttest."""
+"""Tests package exports for btk."""
 
 from .bbt import BBTTest
 from .ttest import CorrelatedTTest, HierarchicalTTest

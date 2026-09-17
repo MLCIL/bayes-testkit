@@ -1,4 +1,4 @@
-"""Bayesian hierarchical correlated t-test implementation for bbttest.tests.ttest."""
+"""Bayesian hierarchical correlated t-test implementation for btk.tests.ttest."""
 
 from collections.abc import Iterable
 
@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from bbttest.tests.common import BaseBayesianTest, hdi_from_samples, validate_string
+from btk.tests.common import BaseBayesianTest, hdi_from_samples, validate_string
 
 from ._stats import (
     SummaryResult,
@@ -93,7 +93,7 @@ class HierarchicalTTest(BaseBayesianTest):
     Examples
     --------
     >>> import pandas as pd
-    >>> from bbttest import HierarchicalTTest
+    >>> from btk import HierarchicalTTest
     >>> data = pd.DataFrame({
     ...     'dataset': ['ds1', 'ds1', 'ds2', 'ds2'],
     ...     'fold': [1, 2, 1, 2],

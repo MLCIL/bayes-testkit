@@ -5,7 +5,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from bbttest.tests.common import hdi_from_samples
+from btk.tests.common import hdi_from_samples
 
 
 def plot_hierarchical_ppc(

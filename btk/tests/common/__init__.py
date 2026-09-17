@@ -1,4 +1,4 @@
-"""Shared infrastructure for the bbttest estimators (BBT and the t-tests)."""
+"""Shared infrastructure for the btk estimators (BBT and the t-tests)."""
 
 from ._base import BaseBayesianTest
 from ._stats import hdi_from_samples

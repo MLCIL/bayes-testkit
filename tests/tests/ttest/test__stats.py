@@ -1,7 +1,7 @@
 """
 Unit tests for the shared t-test numerical helpers.
 
-This module contains unit tests for the helpers in ``bbttest.tests.ttest._stats``
+This module contains unit tests for the helpers in ``btk.tests.ttest._stats``
 used by both t-test estimators: ROPE and correlation resolution, cross-validation
 fold structure derivation, the decision rules, and the reporting helpers.
 """
@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bbttest.tests.ttest._stats import (
+from btk.tests.ttest._stats import (
     SummaryResult,
     decision_from_partition,
     resolve_fold_structure,

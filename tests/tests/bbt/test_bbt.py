@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bbttest import BBTTest
-from bbttest.tests.bbt._types import ALL_PROPERTIES_COLUMNS
+from btk import BBTTest
+from btk.tests.bbt._types import ALL_PROPERTIES_COLUMNS
 
 
 @pytest.fixture(scope="module")
@@ -73,7 +73,7 @@ class TestHyperPriors:
     @pytest.mark.parametrize("hyper_prior", ["log_normal", "cauchy", "normal"])
     def test_initial_logp_is_finite(self, hyper_prior: str):
         """The hyper-prior must put the initial point in the support."""
-        from bbttest.tests.bbt.model import _build_bbt_model
+        from btk.tests.bbt.model import _build_bbt_model
 
         model = _build_bbt_model(
             player1=[0, 0, 1],
@@ -122,7 +122,7 @@ class TestDavidsonLikelihood:
     @pytest.mark.parametrize("var", ["win1_obs", "ties_obs"])
     def test_binomial_totals_include_ties(self, var: str):
         """Every Davidson binomial counts all matches, ties included."""
-        from bbttest.tests.bbt.model import _build_bbt_model
+        from btk.tests.bbt.model import _build_bbt_model
 
         model = _build_bbt_model(
             player1=[0, 0, 1],
@@ -141,7 +141,7 @@ class TestDavidsonLikelihood:
 
     def test_plain_model_total_excludes_ties(self):
         """Without Davidson the ties are folded in by the tie solver, not here."""
-        from bbttest.tests.bbt.model import _build_bbt_model
+        from btk.tests.bbt.model import _build_bbt_model
 
         model = _build_bbt_model(
             player1=[0, 0, 1],
@@ -201,7 +201,7 @@ class TestSampledModelShape:
     @pytest.mark.parametrize("use_davidson", [False, True])
     def test_no_free_discrete_variables(self, use_davidson: bool):
         """No free variable may be integer-valued."""
-        from bbttest.tests.bbt.model import _build_bbt_model
+        from btk.tests.bbt.model import _build_bbt_model
 
         model = _build_bbt_model(
             player1=[0, 0, 1],
@@ -758,7 +758,7 @@ class TestPosteriorTableInterpretations:
         def mock_get_pwin(*args, **kwargs):
             return samples, names
 
-        monkeypatch.setattr("bbttest.tests.bbt.bbt._get_pwin", mock_get_pwin)
+        monkeypatch.setattr("btk.tests.bbt.bbt._get_pwin", mock_get_pwin)
 
         result = fitted_model.posterior_table(rope_value=(0.45, 0.55))
 
@@ -800,7 +800,7 @@ class TestPosteriorTableInterpretations:
         def mock_get_pwin(*args, **kwargs):
             return samples, names
 
-        monkeypatch.setattr("bbttest.tests.bbt.bbt._get_pwin", mock_get_pwin)
+        monkeypatch.setattr("btk.tests.bbt.bbt._get_pwin", mock_get_pwin)
 
         result = fitted_model.posterior_table(
             columns=[
@@ -838,7 +838,7 @@ class TestPosteriorTableStructure:
         def mock_get_pwin(*args, **kwargs):
             return samples, names
 
-        monkeypatch.setattr("bbttest.tests.bbt.bbt._get_pwin", mock_get_pwin)
+        monkeypatch.setattr("btk.tests.bbt.bbt._get_pwin", mock_get_pwin)
 
         result = fitted_model.posterior_table()
 
@@ -855,7 +855,7 @@ class TestPosteriorTableStructure:
         def mock_get_pwin(*args, **kwargs):
             return samples, names
 
-        monkeypatch.setattr("bbttest.tests.bbt.bbt._get_pwin", mock_get_pwin)
+        monkeypatch.setattr("btk.tests.bbt.bbt._get_pwin", mock_get_pwin)
 
         result = fitted_model.posterior_table(columns=ALL_PROPERTIES_COLUMNS)
 
@@ -878,7 +878,7 @@ class TestPosteriorTableStructure:
         def mock_get_pwin(*args, **kwargs):
             return samples, names
 
-        monkeypatch.setattr("bbttest.tests.bbt.bbt._get_pwin", mock_get_pwin)
+        monkeypatch.setattr("btk.tests.bbt.bbt._get_pwin", mock_get_pwin)
 
         result = fitted_model.posterior_table()
 
@@ -902,7 +902,7 @@ class TestPosteriorTableStructure:
         def mock_get_pwin(*args, **kwargs):
             return samples, names
 
-        monkeypatch.setattr("bbttest.tests.bbt.bbt._get_pwin", mock_get_pwin)
+        monkeypatch.setattr("btk.tests.bbt.bbt._get_pwin", mock_get_pwin)
 
         result = fitted_model.posterior_table(
             columns=["hdi_low", "hdi_high"],
@@ -929,7 +929,7 @@ class TestPosteriorTableStructure:
         def mock_get_pwin(*args, **kwargs):
             return samples, names
 
-        monkeypatch.setattr("bbttest.tests.bbt.bbt._get_pwin", mock_get_pwin)
+        monkeypatch.setattr("btk.tests.bbt.bbt._get_pwin", mock_get_pwin)
 
         result = fitted_model.posterior_table(
             columns=[
