@@ -25,6 +25,28 @@ If needed, you can also install the latest development version directly from Git
 pip install git+https://github.com/scikit-fingerprints/bbt-test
 ```
 
+### Note for macOS users
+
+Some PyTensor versions select the legacy macOS linker with ``-ld64``. Newer
+Apple toolchains (e.g `clang++` shipped with Xcode 27 or later) may interpret that flag as a request for a nonexistent ``d64`` library and report errors such as:
+
+```sh
+pytensor.link.c.exceptions.CompileError: Compilation failed
+...
+ld: library 'd64' not found
+clang++: error: linker command failed with exit code
+```
+
+Bayes Test Kit tests the compiler selected by PyTensor and automatically omits
+``-ld64`` only when normal linking succeeds but that flag is unsupported. See
+the upstream [PyTensor issue](https://github.com/pymc-devs/pytensor/issues/2268)
+for additional context.
+
+This compatibility patch is enabled by default. To disable it, set
+``BTK_PATCH_PYTENSOR=0`` before importing Bayes Test Kit.
+
+If you preferer have fast execution and avoid patching PyTensor you can install Bayes Test Kit in conda environent with compatible `clang++` (see `environment-osx-arm64.yaml`)
+
 ## Quickstart
 
 To generate results from BBT model you need to first fit posterior MCMC samples. Bayes Test Kit supports unpaired (1 metric readout per algorithm per dataset) and paired (multiple metric readouts per algorithm per dataset) data.

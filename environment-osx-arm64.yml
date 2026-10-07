@@ -1,0 +1,18 @@
+# To use:
+#
+#   $ conda env create -f environment-osx-arm64.yml  # `mamba` works too for this command
+#   $ conda activate btk-env
+#
+name: btk-env
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.11
+  - pip==23.3.1
+  - compilers
+  # Apple Accelerate framework for BLAS operations
+  - libblas=*=*accelerate
+  - pytest
+  - pip:
+      - bayes-testkit
+      
