@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import Colormap, LinearSegmentedColormap
+from matplotlib.patches import Polygon
 
 # Cartesian coordinates of the simplex vertices. The convention matches the
 # paper: left model bottom-left, right model bottom-right, rope at the top.
@@ -16,6 +18,13 @@ _V_LEFT = np.array([0.0, 0.0])
 _V_RIGHT = np.array([1.0, 0.0])
 _V_ROPE = np.array([0.5, np.sqrt(3.0) / 2.0])
 _CENTROID = (_V_LEFT + _V_RIGHT + _V_ROPE) / 3.0
+
+# Count colormap of the paper's simplex figures: dark blue for sparse cells
+# through pale beige to dark red at the densest ones.
+_DENSITY_CMAP = LinearSegmentedColormap.from_list(
+    "btk_simplex_density",
+    ["#1f4e79", "#4f8bb0", "#a9cfd0", "#d9d2b6", "#c99a7e", "#7b2a31"],
+)
 
 
 def _to_cartesian(
@@ -37,11 +46,17 @@ def plot_hierarchical_simplex(
     right_model: str,
     rope_band: tuple[float, float],
     ax: plt.Axes | None = None,
-    point_size: float = 4.0,
-    alpha: float = 0.25,
+    gridsize: int = 60,
+    cmap: str | Colormap | None = None,
+    colorbar: bool = True,
     **kwargs,
 ) -> plt.Axes:
     """Plot the barycentric simplex of the next-dataset ROPE triple.
+
+    The posterior cloud is drawn as a hexagonal 2D histogram coloured by the
+    number of draws per cell, as in Fig. 11 of the paper. Unlike a plain
+    scatter, this keeps the shape of the posterior readable where thousands of
+    draws pile up on top of each other. Empty cells are left blank.
 
     Parameters
     ----------
@@ -55,12 +70,17 @@ def plot_hierarchical_simplex(
         The ROPE band, used to annotate the rope vertex.
     ax : plt.Axes | None, default None
         Axes to draw on; created if ``None``.
-    point_size : float, default 4.0
-        Marker size for the posterior cloud.
-    alpha : float, default 0.25
-        Marker transparency.
+    gridsize : int, default 60
+        Number of hexagonal cells across the base of the triangle. Larger
+        values give a finer histogram but need more posterior draws to fill.
+    cmap : str | Colormap | None, default None
+        Colormap for the per-cell counts. Defaults to the paper's blue-beige-red
+        scale.
+    colorbar : bool, default True
+        Whether to draw a ``Count`` colorbar next to the simplex.
     **kwargs
-        Forwarded to the scatter call.
+        Forwarded to :meth:`matplotlib.axes.Axes.hexbin` (e.g. ``bins="log"``
+        for a log-scaled count, or ``mincnt`` to hide sparse cells).
 
     Returns
     -------
@@ -71,6 +91,30 @@ def plot_hierarchical_simplex(
         raise ValueError("ax must be a matplotlib Axes object or None.")
     if ax is None:
         _, ax = plt.subplots()
+
+    # Posterior cloud. Positive difference favours the left model, drawn at the
+    # bottom-right vertex; theta_right therefore lands on the right.
+    points = _to_cartesian(
+        np.asarray(theta_left), np.asarray(theta_rope), np.asarray(theta_right)
+    )
+    # Bin over the triangle's bounding box (not the data's) so the cell size is
+    # fixed across plots, with the row count chosen to keep hexagons regular.
+    height = _V_ROPE[1]
+    kwargs.setdefault("mincnt", 1)
+    hexes = ax.hexbin(
+        points[:, 0],
+        points[:, 1],
+        gridsize=(gridsize, max(1, round(gridsize * height / np.sqrt(3.0)))),
+        extent=(0.0, 1.0, 0.0, height),
+        cmap=_DENSITY_CMAP if cmap is None else cmap,
+        linewidths=0.2,
+        **kwargs,
+    )
+    # Cells straddling an edge would otherwise poke out of the simplex.
+    clip = Polygon(
+        np.vstack([_V_LEFT, _V_RIGHT, _V_ROPE]), closed=True, transform=ax.transData
+    )
+    hexes.set_clip_path(clip)
 
     # Triangle edges.
     triangle = np.vstack([_V_LEFT, _V_RIGHT, _V_ROPE, _V_LEFT])
@@ -86,21 +130,6 @@ def plot_hierarchical_simplex(
             color="#ff7f0e",
             linewidth=0.8,
         )
-
-    # Posterior cloud. Positive difference favours the left model, drawn at the
-    # bottom-right vertex; theta_right therefore lands on the right.
-    points = _to_cartesian(
-        np.asarray(theta_left), np.asarray(theta_rope), np.asarray(theta_right)
-    )
-    ax.scatter(
-        points[:, 0],
-        points[:, 1],
-        s=point_size,
-        alpha=alpha,
-        color="#1f77b4",
-        edgecolors="none",
-        **kwargs,
-    )
 
     # Vertex labels: theta_right -> left model (better), theta_left -> right model.
     ax.text(*_V_RIGHT, f"\n{left_model} better", ha="center", va="top", fontsize=9)
@@ -118,6 +147,8 @@ def plot_hierarchical_simplex(
     margin = 0.12
     ax.set_xlim(-margin, 1 + margin)
     ax.set_ylim(-margin, _V_ROPE[1] + margin)
+    if colorbar:
+        ax.figure.colorbar(hexes, ax=ax, label="Count", shrink=0.6)
     return ax
 
 

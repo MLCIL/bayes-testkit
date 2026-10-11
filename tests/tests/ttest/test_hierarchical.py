@@ -312,6 +312,21 @@ class TestPlots:
         assert isinstance(ax, plt.Axes)
         plt.close("all")
 
+    def test_simplex_bins_every_draw(self, fitted_hierarchical):
+        """Test that the simplex hexbin counts sum to the number of posterior draws."""
+        ax = fitted_hierarchical.plot(kind="simplex")
+        hexes = ax.collections[0]
+        n_draws = fitted_hierarchical.idata_.posterior.sizes
+        assert hexes.get_array().sum() == n_draws["chain"] * n_draws["draw"]
+        assert len(ax.figure.axes) == 2  # simplex + Count colorbar
+        plt.close("all")
+
+    def test_simplex_without_colorbar(self, fitted_hierarchical):
+        """Test that colorbar=False leaves the figure with a single axes."""
+        ax = fitted_hierarchical.plot(kind="simplex", colorbar=False)
+        assert len(ax.figure.axes) == 1
+        plt.close("all")
+
     def test_forest_returns_axes(self, fitted_hierarchical):
         """Test that the forest plot returns a matplotlib Axes."""
         ax = fitted_hierarchical.plot(kind="forest")
