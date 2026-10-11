@@ -7,16 +7,15 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from btk.tests.common import BaseBayesianTest, validate_string
-
-from ._stats import (
-    SummaryResult,
+from btk.tests.common import (
+    BaseBayesianTest,
     decision_from_partition,
-    resolve_fold_structure,
-    resolve_rho,
     resolve_rope,
     samples_to_inference_data,
+    validate_string,
 )
+
+from ._stats import SummaryResult, resolve_fold_structure, resolve_rho
 from ._types import ALL_TTEST_COLUMNS, CORRELATED_PLOT_KINDS
 from .plots import plot_correlated_posterior
 

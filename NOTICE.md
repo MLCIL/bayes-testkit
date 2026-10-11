@@ -1,13 +1,14 @@
 # NOTICE
 
-## Correlated T-Test and Hierarchical T-Test (reference)
+## Correlated T-Test, Hierarchical T-Test and Signed-Rank Test (reference)
 
 - Reference paper: Alessio Benavoli, Giorgio Corani, Janez Demsar, Marco Zaffalon,
   "Time for a Change: a Tutorial for Comparing Multiple Classifiers Through Bayesian
   Analysis", Journal of Machine Learning Research 18 (2017), http://jmlr.org/papers/v18/16-305.html
 
-`CorrelatedTTest` and `HierarchicalTTest` implement the Bayesian correlated t-test
-and the Bayesian hierarchical correlated t-test described in that paper.
+`CorrelatedTTest`, `HierarchicalTTest` and `SignedRankTest` implement the Bayesian
+correlated t-test, the Bayesian hierarchical correlated t-test and the Bayesian
+signed-rank test described in that paper.
 
 ## bbtcomp (reference implementation)
 

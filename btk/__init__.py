@@ -6,10 +6,16 @@ from ._pytensor_compat import (
 
 _configure_pytensor_macos_linker()
 
-from .tests import BBTTest, CorrelatedTTest, HierarchicalTTest  # noqa: E402
+from .tests import (  # noqa: E402
+    BBTTest,
+    CorrelatedTTest,
+    HierarchicalTTest,
+    SignedRankTest,
+)
 
 __all__ = [
     "BBTTest",
     "CorrelatedTTest",
     "HierarchicalTTest",
+    "SignedRankTest",
 ]

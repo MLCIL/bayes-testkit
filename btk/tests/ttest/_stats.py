@@ -1,54 +1,15 @@
 """Shared numerical helpers for the correlated and hierarchical t-tests.
 
-Everything here is test-agnostic: resolving the ROPE and the Nadeau-Bengio
-correlation, computing a highest-density interval from samples, turning a
-three-way ROPE partition into the shared decision vocabulary, wrapping samples
-into an :class:`arviz.InferenceData`, and the small printable ``summary``
-object.
+Everything here is specific to the t-tests: resolving the Nadeau-Bengio
+correlation from the cross-validation fold structure, and the small printable
+``summary`` object.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import arviz as az
-import numpy as np
 import pandas as pd
-
-# Shared decision label vocabulary. The raw symbols mirror BBT's ``>``/``=``/
-# ``?``, with an added ``<`` because the t-tests compare a *fixed* left vs.
-# right pair (BBT orders its pairs strongest-first and so never needs ``<``).
-DECISION_LEFT_BETTER = ">"
-DECISION_RIGHT_BETTER = "<"
-DECISION_EQUIVALENT = "="
-DECISION_UNDETERMINED = "?"
-
-
-def resolve_rope(rope: float | tuple[float, float]) -> tuple[float, float]:
-    """Resolve a ROPE argument to an explicit ``(lo, hi)`` band on the difference scale.
-
-    A scalar is interpreted as a half-width ``r`` giving the symmetric band
-    ``[-r, r]`` (this is what keeps the CLI's ``--rope`` a consistent
-    half-width shape across tests). A 2-tuple is used verbatim.
-
-    Parameters
-    ----------
-    rope : float | tuple[float, float]
-        Half-width ``r`` (scalar) or explicit ``(lo, hi)`` band.
-
-    Returns
-    -------
-    tuple[float, float]
-        The resolved ``(lo, hi)`` interval, with ``lo < hi``.
-    """
-    if isinstance(rope, tuple):
-        lo, hi = rope
-        if lo >= hi:
-            raise ValueError(f"ROPE band must satisfy lo < hi, got ({lo}, {hi}).")
-        return float(lo), float(hi)
-    if rope < 0:
-        raise ValueError(f"ROPE half-width must be non-negative, got {rope}.")
-    return -float(rope), float(rope)
 
 
 def resolve_fold_structure(fold_ids: pd.Series, fold_col: str) -> tuple[int, int]:
@@ -127,72 +88,6 @@ def resolve_rho(rho: float | None, n_folds: int | None, n: int) -> float:
             f"Check the 'rho' override or the fold structure of the data."
         )
     return resolved
-
-
-def decision_from_partition(
-    p_left: float,
-    p_rope: float,
-    p_right: float,
-    left_model: str,
-    right_model: str,
-    threshold: float,
-) -> tuple[str, str]:
-    """Turn a three-way ROPE partition into a decision label and raw symbol.
-
-    The estimand is the mean difference ``mu = left - right`` (positive means
-    the left model is better), so ``p_right = P(mu > r)`` votes for the left
-    model and ``p_left = P(mu < -r)`` votes for the right model. A side is
-    declared only if its probability exceeds ``threshold`` (Benavoli et al.
-    2017, Section 3.2, uses 0.95); otherwise the decision is undetermined.
-
-    Parameters
-    ----------
-    p_left, p_rope, p_right : float
-        The three partition probabilities (should sum to one).
-    left_model, right_model : str
-        Names of the two algorithms being compared.
-    threshold : float
-        Probability a region must exceed to be declared.
-
-    Returns
-    -------
-    tuple[str, str]
-        ``(decision, decision_raw)`` where ``decision`` uses the human strings
-        (``"<model> better"`` / ``"Equivalent"`` / ``"Unknown"``, matching BBT)
-        and ``decision_raw`` is one of ``>`` / ``<`` / ``=`` / ``?``.
-    """
-    if p_right >= threshold:
-        return f"{left_model} better", DECISION_LEFT_BETTER
-    if p_left >= threshold:
-        return f"{right_model} better", DECISION_RIGHT_BETTER
-    if p_rope >= threshold:
-        return "Equivalent", DECISION_EQUIVALENT
-    return "Unknown", DECISION_UNDETERMINED
-
-
-def samples_to_inference_data(
-    posterior: dict[str, np.ndarray],
-) -> az.InferenceData:
-    """Wrap named 1-D sample arrays into an :class:`arviz.InferenceData`.
-
-    Each array is treated as a single chain of draws, so the closed-form
-    correlated t-test exposes exactly the same ``idata_`` endpoint as the
-    sampled hierarchical test.
-
-    Parameters
-    ----------
-    posterior : dict[str, np.ndarray]
-        Mapping from variable name to a 1-D array of draws.
-
-    Returns
-    -------
-    az.InferenceData
-        Inference data with a single chain per variable.
-    """
-    reshaped = {
-        name: np.asarray(draws)[np.newaxis, :] for name, draws in posterior.items()
-    }
-    return az.from_dict(posterior=reshaped)
 
 
 @dataclass

@@ -7,15 +7,16 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from btk.tests.common import BaseBayesianTest, hdi_from_samples, validate_string
-
-from ._stats import (
-    SummaryResult,
+from btk.tests.common import (
+    BaseBayesianTest,
     decision_from_partition,
-    resolve_fold_structure,
-    resolve_rho,
+    hdi_from_samples,
+    region_probabilities,
     resolve_rope,
+    validate_string,
 )
+
+from ._stats import SummaryResult, resolve_fold_structure, resolve_rho
 from ._types import ALL_TTEST_COLUMNS, HIERARCHICAL_PLOT_KINDS
 from .model import _sample_hierarchical
 from .plots import (
@@ -335,19 +336,8 @@ class HierarchicalTTest(BaseBayesianTest):
     def _region_probabilities(
         self, rope_band: tuple[float, float]
     ) -> tuple[float, float, float]:
-        """Probability of each simplex region, by counting posterior draws.
-
-        Benavoli et al. (2017), Section 4.3.2 quantify the comparison "by
-        counting the number of points that fall in the three regions" delimited
-        by ``theta_i >= max(theta_j, theta_k)``.
-        """
-        theta_l, theta_e, theta_r = self._next_dataset_triple(rope_band)
-        winner = np.argmax(np.column_stack([theta_l, theta_e, theta_r]), axis=1)
-        return (
-            float(np.mean(winner == 0)),
-            float(np.mean(winner == 1)),
-            float(np.mean(winner == 2)),
-        )
+        """Probability of each simplex region of the next-dataset triple."""
+        return region_probabilities(*self._next_dataset_triple(rope_band))
 
     # -- reports ------------------------------------------------------------
 
